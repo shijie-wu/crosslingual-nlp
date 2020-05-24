@@ -52,7 +52,7 @@ def main(hparams):
         filepath=filepath,
         monitor=model.selection_criterion,
         verbose=True,
-        save_top_k=1,
+        save_top_k=hparams.save_top_k,
         mode=model.comparsion,
         period=0,
         prefix="",
@@ -98,6 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp_name", default="default", type=str)
     parser.add_argument("--min_delta", default=1e-3, type=float)
     parser.add_argument("--patience", default=10, type=int)
+    parser.add_argument("--save_top_k", default=1, type=int)
     ############################################################################
     parser.add_argument("--default_save_path", default="./", type=str)
     parser.add_argument("--gradient_clip_val", default=0, type=float)
