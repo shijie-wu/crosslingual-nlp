@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import transformers
 from torch import Tensor
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, RandomSampler
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 import module
@@ -304,7 +304,7 @@ class Model(pl.LightningModule):
 
     def get_lr(self):
         if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            return self.optimizer.param_groups[0]['lr']
+            return self.optimizer.param_groups[0]["lr"]
         else:
             return self.scheduler.get_last_lr()[0]
 
@@ -322,41 +322,40 @@ class Model(pl.LightningModule):
             if filepath is None:
                 print("skipping {split} language: {lang}")
                 continue
-            datasets.append(
-                data_class(
-                    tokenizer=self.tokenizer,
-                    filepath=filepath,
-                    lang=lang,
-                    split=split,
-                    max_len=max_len,
-                    **kwargs,
-                )
-            )
+            params = {}
+            params["tokenizer"] = self.tokenizer
+            params["filepath"] = filepath
+            params["lang"] = lang
+            params["split"] = split
+            params["max_len"] = max_len
+            if split == Split.train:
+                params["subset_ratio"] = self.hparams.subset_ratio
+                params["subset_count"] = self.hparams.subset_count
+                params["subset_seed"] = self.hparams.subset_seed
+            datasets.append(data_class(**params, **kwargs))
         return datasets
 
     def train_dataloader(self):
         collate = partial(util.default_collate, padding=self.padding)
         if len(self.trn_datasets) == 1:
-            return DataLoader(
-                self.trn_datasets[0],
-                batch_size=self.hparams.batch_size,
-                shuffle=True,
-                pin_memory=True,
-                drop_last=False,
-                collate_fn=collate,
-            )
+            dataset = self.trn_datasets[0]
+            sampler = RandomSampler(dataset)
         else:
             datasets = ConcatDataset(self.trn_datasets)
-            sampler = util.ConcatSampler(datasets, self.hparams.batch_size)
-            return DataLoader(
-                datasets,
-                batch_size=self.hparams.batch_size,
-                sampler=sampler,
-                pin_memory=True,
-                drop_last=False,
-                collate_fn=collate,
-                num_workers=1,
-            )
+            if self.hparams.mix_sampling:
+                sampler = RandomSampler(dataset)
+            else:
+                sampler = util.ConcatSampler(datasets, self.hparams.batch_size)
+
+        return DataLoader(
+            datasets,
+            batch_size=self.hparams.batch_size,
+            sampler=sampler,
+            pin_memory=True,
+            drop_last=False,
+            collate_fn=collate,
+            num_workers=1,
+        )
 
     def val_dataloader(self):
         collate = partial(util.default_collate, padding=self.padding)
@@ -399,6 +398,10 @@ class Model(pl.LightningModule):
         parser.add_argument("--tst_langs", required=True, nargs="+", type=str)
         parser.add_argument("--max_trn_len", default=128, type=int)
         parser.add_argument("--max_tst_len", default=128, type=int)
+        parser.add_argument("--subset_ratio", default=1.0, type=float)
+        parser.add_argument("--subset_count", default=-1, type=int)
+        parser.add_argument("--subset_seed", default=42, type=int)
+        parser.add_argument("--mix_sampling", default=False, type=util.str2bool)
         # encoder
         parser.add_argument("--pretrain", required=True, type=str)
         parser.add_argument("--freeze_layer", default=-1, type=int)

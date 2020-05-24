@@ -1,4 +1,5 @@
 import glob
+from functools import partial
 from typing import Dict, Iterator, List, Optional, Tuple
 
 import langcodes
@@ -10,6 +11,10 @@ from tqdm import tqdm
 
 import constant
 from enumeration import Split
+
+tqdm.monitor_interval = 0
+
+tqdm = partial(tqdm, bar_format="{l_bar}{r_bar}")
 
 
 def sent_tokenize(text, lang="en"):
@@ -33,6 +38,9 @@ class Dataset(torch.utils.data.Dataset):
         lang: str,
         split: Optional[Split] = None,
         max_len: Optional[int] = None,
+        subset_ratio: float = 1,
+        subset_count: int = -1,
+        subset_seed: int = 42,
     ):
         self.tokenizer = tokenizer
         self.filepath = filepath
@@ -43,8 +51,16 @@ class Dataset(torch.utils.data.Dataset):
         self.max_len = max_len if max_len is not None else self.tokenizer.max_len
         self.data: List[Dict[str, np.ndarray]] = []
 
-        self.before_read_file()
-        self.read_file(filepath)
+        assert 0 < subset_ratio <= 1
+        assert not (
+            subset_ratio < 1 and subset_count > 0
+        ), "subset_ratio and subset_count is mutally exclusive"
+        self.subset_ratio = subset_ratio
+        self.subset_count = subset_count
+        self.subset_seed = subset_seed
+
+        self.before_load()
+        self.load(filepath)
 
     def unpack_language(self, lang):
         return lang
@@ -65,11 +81,41 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data)
 
-    def before_read_file(self):
+    def before_load(self):
         pass
 
-    def read_file(self, filepath: str):
+    def read_file(self, filepath: str) -> Iterator[Dict]:
         raise NotImplementedError
+
+    def process_example(self, example: Dict) -> List[Dict]:
+        raise NotImplementedError
+
+    def load(self, filepath: str):
+        assert self.data == []
+
+        examples = []
+        for ex in tqdm(self.read_file(filepath), desc="read data"):
+            examples.append(ex)
+
+        if self.subset_count > 0 or self.subset_ratio < 1:
+            if self.subset_count > 0:
+                subset_size = self.subset_count
+            elif self.subset_ratio < 1:
+                subset_size = int(len(examples) * self.subset_ratio)
+            else:
+                raise ValueError("subset_ratio and subset_count is mutally exclusive")
+
+            print(
+                f"taking {subset_size} subset (total {len(examples)}) from {filepath}"
+            )
+
+            seed = np.random.RandomState(self.subset_seed)
+            examples = seed.permutation(examples)[:subset_size]
+
+        data = []
+        for example in tqdm(examples, desc="parse data"):
+            data.extend(self.process_example(example))
+        self.data = data
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
@@ -77,7 +123,7 @@ class Dataset(torch.utils.data.Dataset):
 
 
 class ClassificationDataset(Dataset):
-    def before_read_file(self):
+    def before_load(self):
         self.max_len = min(self.max_len, self.tokenizer.max_len_sentences_pair)
         self.labels = self.get_labels()
         self.label2id = {label: idx for idx, label in enumerate(self.labels)}
@@ -99,12 +145,14 @@ class ClassificationDataset(Dataset):
                 assert len(keys) == len(vals)
                 yield {k: v for k, v in zip(keys, vals)}
 
-    def _process_file(self, filepath) -> Iterator[Tuple[str, Optional[str], str]]:
+    def read_file(self, filepath) -> Iterator[Dict]:
         raise NotImplementedError
 
-    def process_example(
-        self, sent1: str, sent2: Optional[str], label: str
-    ) -> Optional[Dict]:
+    def process_example(self, example: Dict) -> List[Dict]:
+        sent1: str = example["sent1"]
+        sent2: Optional[str] = example["sent2"]
+        label: str = example["label"]
+
         tknzr = self.tokenizer
 
         tokens1 = self.tokenize(sent1)
@@ -126,16 +174,7 @@ class ClassificationDataset(Dataset):
         sent, segment = np.array(sent), np.array(segment)
 
         label = np.array(self.label2id[label]).reshape(-1)
-        return {"sent": sent, "segment": segment, "label": label, "lang": self.lang}
-
-    def read_file(self, filepath: str):
-        assert self.data == []
-        data = []
-        for sent1, sent2, label in tqdm(self._process_file(filepath), desc="read data"):
-            d = self.process_example(sent1, sent2, label)
-            if d is not None:
-                data.append(d)
-        self.data = data
+        return [{"sent": sent, "segment": segment, "label": label, "lang": self.lang}]
 
 
 class Xnli(ClassificationDataset):
@@ -143,7 +182,7 @@ class Xnli(ClassificationDataset):
     def get_labels(cls) -> List[str]:
         return ["contradiction", "entailment", "neutral"]
 
-    def _process_file(self, filepath) -> Iterator[Tuple[str, Optional[str], str]]:
+    def read_file(self, filepath) -> Iterator[Dict]:
         for row in self.read_csv(filepath, delimiter="\t"):
             if self.split == Split.train:
                 sent1 = row["premise"]
@@ -151,14 +190,14 @@ class Xnli(ClassificationDataset):
                 label = row["label"]
                 if label == "contradictory":
                     label = "contradiction"
-                yield sent1, sent2, label
+                yield {"sent1": sent1, "sent2": sent2, "label": label}
             elif self.split == Split.dev or self.split == Split.test:
                 if row["language"] != self.lang:
                     continue
                 sent1 = row["sentence1"]
                 sent2 = row["sentence2"]
                 label = row["gold_label"]
-                yield sent1, sent2, label
+                yield {"sent1": sent1, "sent2": sent2, "label": label}
             else:
                 raise ValueError(f"Unsupported split: {self.split}")
 
@@ -180,7 +219,7 @@ class MLDoc(ClassificationDataset):
     def get_labels(cls) -> List[str]:
         return ["CCAT", "ECAT", "GCAT", "MCAT"]
 
-    def _process_file(self, filepath) -> Iterator[Tuple[str, Optional[str], str]]:
+    def read_file(self, filepath) -> Iterator[Dict]:
         with open(filepath, "r") as fp:
             for line in fp.readlines():
                 line = line.strip()
@@ -194,7 +233,7 @@ class MLDoc(ClassificationDataset):
                 if len(sents) > 1:
                     sent2 = sents[1]
 
-                yield sent1, sent2, label
+                yield {"sent1": sent1, "sent2": sent2, "label": label}
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
@@ -231,7 +270,7 @@ LABEL_PAD_ID = -1
 
 
 class TaggingDataset(Dataset):
-    def before_read_file(self):
+    def before_load(self):
         self.max_len = min(self.max_len, self.tokenizer.max_len_single_sentence)
         self.shift = self.max_len // 2
         self.labels = self.get_labels()
@@ -245,7 +284,7 @@ class TaggingDataset(Dataset):
     def get_labels(cls) -> List[str]:
         raise NotImplementedError
 
-    def _process_file(self, filepath) -> Iterator[Tuple[List, List]]:
+    def read_file(self, filepath) -> Iterator[Dict]:
         raise NotImplementedError
 
     def add_special_tokens(self, sent, labels):
@@ -285,22 +324,16 @@ class TaggingDataset(Dataset):
 
         yield self.add_special_tokens(token_ids, label_ids)
 
-    def process_example(self, sent: List, labels: List) -> Optional[List[Dict]]:
-        data = []
+    def process_example(self, example: Dict) -> List[Dict]:
+        sent: List = example["sent"]
+        labels: List = example["labels"]
+
+        data: List[Dict] = []
         if not sent:
-            return None
+            return data
         for src, tgt in self._process_example_helper(sent, labels):
             data.append({"sent": src, "labels": tgt, "lang": self.lang})
         return data
-
-    def read_file(self, filepath: str):
-        assert self.data == []
-        data = []
-        for sent, labels in tqdm(self._process_file(filepath), desc="read data"):
-            d = self.process_example(sent, labels)
-            if d is not None:
-                data.extend(d)
-        self.data = data
 
 
 class ConllNER(TaggingDataset):
@@ -318,7 +351,7 @@ class ConllNER(TaggingDataset):
             "O",
         ]
 
-    def _process_file(self, filepath: str):
+    def read_file(self, filepath: str) -> Iterator[Dict]:
         """Reads an empty line seperated data (word \t label)."""
         words: List[str] = []
         labels: List[str] = []
@@ -327,14 +360,14 @@ class ConllNER(TaggingDataset):
                 line = line.strip()
                 if not line:
                     assert len(words) == len(labels)
-                    yield words, labels
+                    yield {"sent": words, "labels": labels}
                     words, labels = [], []
                 else:
                     word, label = line.split("\t")
                     words.append(word)
                     labels.append(label)
             if len(words) == len(labels) and words:
-                yield words, labels
+                yield {"sent": words, "labels": labels}
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
@@ -354,7 +387,7 @@ class WikiAnnNER(TaggingDataset):
     def get_labels(cls):
         return ["B-LOC", "B-ORG", "B-PER", "I-LOC", "I-ORG", "I-PER", "O"]
 
-    def _process_file(self, filepath: str):
+    def read_file(self, filepath: str) -> Iterator[Dict]:
         """Reads an empty line seperated data (word \t label)."""
         words: List[str] = []
         labels: List[str] = []
@@ -363,7 +396,7 @@ class WikiAnnNER(TaggingDataset):
                 line = line.strip()
                 if not line:
                     assert len(words) == len(labels)
-                    yield words, labels
+                    yield {"sent": words, "labels": labels}
                     words, labels = [], []
                 else:
                     word, label = line.split("\t")
@@ -371,7 +404,7 @@ class WikiAnnNER(TaggingDataset):
                     words.append(word)
                     labels.append(label)
             if len(words) == len(labels) and words:
-                yield words, labels
+                yield {"sent": words, "labels": labels}
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
@@ -391,7 +424,7 @@ class UdPOS(TaggingDataset):
     def get_labels(cls):
         return constant.UD_POS_LABELS
 
-    def _process_file(self, filepath: str):
+    def read_file(self, filepath: str) -> Iterator[Dict]:
         words: List[str] = []
         labels: List[str] = []
         with open(filepath, "r") as f:
@@ -400,14 +433,14 @@ class UdPOS(TaggingDataset):
                 if len(tok) < 2 or line[0] == "#":
                     assert len(words) == len(labels)
                     if words:
-                        yield words, labels
+                        yield {"sent": words, "labels": labels}
                         words, labels = [], []
                 if tok[0].isdigit():
                     word, label = tok[1], tok[3]
                     words.append(word)
                     labels.append(label)
             if len(words) == len(labels) and words:
-                yield words, labels
+                yield {"sent": words, "labels": labels}
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
@@ -419,10 +452,10 @@ class UdPOS(TaggingDataset):
             fp = f"{path}/UD_{lang}/*-ud-test.conllu"
         else:
             raise ValueError(f"Unsupported split: {split}")
-        fp = glob.glob(fp)
-        if len(fp) == 1:
-            return fp[0]
-        elif len(fp) == 0:
+        _fp = glob.glob(fp)
+        if len(_fp) == 1:
+            return _fp[0]
+        elif len(_fp) == 0:
             return None
         else:
             raise ValueError(f"Unsupported split: {split}")
@@ -436,7 +469,7 @@ class ParsingDataset(Dataset):
         self.max_len_unit = max_len_unit
         super().__init__(**kwargs)
 
-    def before_read_file(self):
+    def before_load(self):
         self.max_len = min(self.max_len, self.tokenizer.max_len_single_sentence)
         self.labels = self.get_labels()
         self.label2id = {label: idx for idx, label in enumerate(self.labels)}
@@ -459,7 +492,7 @@ class ParsingDataset(Dataset):
     def get_pos_tags(cls) -> List[str]:
         return constant.UD_POS_LABELS
 
-    def _process_file(self, filepath) -> Iterator[Tuple[List, List, List, List]]:
+    def read_file(self, filepath) -> Iterator[Dict]:
         with open(filepath, "r") as f:
             sent: List[str] = []
             pos_tags: List[str] = []
@@ -469,7 +502,12 @@ class ParsingDataset(Dataset):
                 tok = line.strip().split("\t")
                 if len(tok) < 2 or line[0] == "#":
                     if sent:
-                        yield sent, pos_tags, heads, labels
+                        yield {
+                            "sent": sent,
+                            "pos_tags": pos_tags,
+                            "heads": heads,
+                            "labels": labels,
+                        }
                         sent = []
                         pos_tags = []
                         heads = []
@@ -481,7 +519,12 @@ class ParsingDataset(Dataset):
                     heads.append(int(head))
                     labels.append(label.split(":")[0])
             if sent:
-                yield sent, pos_tags, heads, labels
+                yield {
+                    "sent": sent,
+                    "pos_tags": pos_tags,
+                    "heads": heads,
+                    "labels": labels,
+                }
 
     def add_special_tokens(self, sent, pos_tags, heads, labels):
         sent = self.tokenizer.build_inputs_with_special_tokens(sent)
@@ -501,9 +544,11 @@ class ParsingDataset(Dataset):
         labels = labels * (1 - mask) + LABEL_PAD_ID * mask
         return sent, pos_tags, heads, labels
 
-    def process_example(
-        self, sent: List, pos_tags: List, heads: List, labels: List
-    ) -> Optional[Dict]:
+    def process_example(self, example: Dict) -> List[Dict]:
+        sent: List = example["sent"]
+        pos_tags: List = example["pos_tags"]
+        heads: List = example["heads"]
+        labels: List = example["labels"]
 
         token_ids: List[int] = []
         pos_ids: List[int] = []
@@ -545,24 +590,15 @@ class ParsingDataset(Dataset):
         token_ids, pos_ids, head_ids, label_ids = self.add_special_tokens(
             token_ids, pos_ids, head_ids, label_ids
         )
-        return {
-            "sent": token_ids,
-            "pos_tags": pos_ids,
-            "heads": head_ids,
-            "labels": label_ids,
-            "lang": self.lang,
-        }
-
-    def read_file(self, filepath: str):
-        assert self.data == []
-        data = []
-        for sent, pos_tags, heads, labels in tqdm(
-            self._process_file(filepath), desc="read data"
-        ):
-            d = self.process_example(sent, pos_tags, heads, labels)
-            if d is not None:
-                data.append(d)
-        self.data = data
+        return [
+            {
+                "sent": token_ids,
+                "pos_tags": pos_ids,
+                "heads": head_ids,
+                "labels": label_ids,
+                "lang": self.lang,
+            }
+        ]
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
@@ -574,10 +610,10 @@ class ParsingDataset(Dataset):
             fp = f"{path}/UD_{lang}/*-ud-test.conllu"
         else:
             raise ValueError(f"Unsupported split: {split}")
-        fp = glob.glob(fp)
-        if len(fp) == 1:
-            return fp[0]
-        elif len(fp) == 0:
+        _fp = glob.glob(fp)
+        if len(_fp) == 1:
+            return _fp[0]
+        elif len(_fp) == 0:
             return None
         else:
             raise ValueError(f"Unsupported split: {split}")
