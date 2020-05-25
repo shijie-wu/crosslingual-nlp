@@ -141,7 +141,10 @@ class Model(pl.LightningModule):
         return mask
 
     def encode_sent(
-        self, sent: Tensor, lang: Optional[str] = None, segment: Optional[Tensor] = None
+        self,
+        sent: Tensor,
+        langs: Optional[List[str]] = None,
+        segment: Optional[Tensor] = None,
     ):
         mask = self.get_mask(sent)
         if isinstance(self.model, transformers.BertModel):
@@ -149,15 +152,17 @@ class Model(pl.LightningModule):
                 input_ids=sent, attention_mask=mask, token_type_ids=segment
             )
         elif isinstance(self.model, transformers.XLMModel):
-            if lang is not None:
+            if langs is not None:
                 try:
-                    lang_id = self.tokenizer.lang2id[lang]
-                    lang = torch.ones_like(sent) * lang_id
-                except KeyError:
-                    print("missing ", lang)
-                    lang = None
+                    batch_size, seq_len = sent.shape
+                    langs = [self.tokenizer.lang2id[l] for l in langs]
+                    langs = torch.tensor(langs, dtype=torch.long, device=sent.device)
+                    langs = langs.unsqueeze(1).expand(batch_size, seq_len)
+                except KeyError as e:
+                    print(f"KeyError with missing language {e}")
+                    langs = None
             _, hidden_states = self.model(
-                input_ids=sent, attention_mask=mask, langs=lang, token_type_ids=segment
+                input_ids=sent, attention_mask=mask, langs=langs, token_type_ids=segment
             )
         else:
             raise ValueError("Unsupported model")
@@ -341,14 +346,14 @@ class Model(pl.LightningModule):
             dataset = self.trn_datasets[0]
             sampler = RandomSampler(dataset)
         else:
-            datasets = ConcatDataset(self.trn_datasets)
+            dataset = ConcatDataset(self.trn_datasets)
             if self.hparams.mix_sampling:
                 sampler = RandomSampler(dataset)
             else:
-                sampler = util.ConcatSampler(datasets, self.hparams.batch_size)
+                sampler = util.ConcatSampler(dataset, self.hparams.batch_size)
 
         return DataLoader(
-            datasets,
+            dataset,
             batch_size=self.hparams.batch_size,
             sampler=sampler,
             pin_memory=True,

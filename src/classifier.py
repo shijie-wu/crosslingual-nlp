@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Optional
 
 import numpy as np
@@ -52,8 +51,6 @@ class Classifier(Model):
         return self._nb_labels
 
     def preprocess_batch(self, batch):
-        assert len(set(batch["lang"])) == 1
-        batch["lang"] = batch["lang"][0]
         batch["label"] = batch["label"].view(-1)
         return batch
 
@@ -79,25 +76,24 @@ class Classifier(Model):
             "log": result,
         }
 
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+    def eval_helper(self, batch, prefix):
         loss, log_probs = self.forward(batch)
 
-        self.metrics[batch["lang"]].add(batch["label"], log_probs)
+        assert (
+            len(set(batch["lang"])) == 1
+        ), "eval batch should contain only one language"
+        lang = batch["lang"][0]
+        self.metrics[lang].add(batch["label"], log_probs)
 
         result = dict()
-        lang = batch["lang"]
-        result[f"val_{lang}_loss"] = loss.view(1)
+        result[f"{prefix}_{lang}_loss"] = loss.view(1)
         return result
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        return self.eval_helper(batch, "val")
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
-        loss, log_probs = self.forward(batch)
-
-        self.metrics[batch["lang"]].add(batch["label"], log_probs)
-
-        result = dict()
-        lang = batch["lang"]
-        result[f"tst_{lang}_loss"] = loss.view(1)
-        return result
+        return self.eval_helper(batch, "tst")
 
     def prepare_data(self):
         hparams = self.hparams

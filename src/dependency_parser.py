@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Optional, Tuple
 
 import numpy as np
@@ -97,9 +96,6 @@ class DependencyParser(Model):
         return self._nb_pos_tags
 
     def preprocess_batch(self, batch):
-        assert len(set(batch["lang"])) == 1
-        batch["lang"] = batch["lang"][0]
-
         _, seq_len = batch["sent"].shape
         batch["first_subword_mask"] = batch["heads"] != -1
         batch["heads"] = batch["heads"].masked_fill(batch["heads"] >= seq_len, -1)
@@ -472,7 +468,7 @@ class DependencyParser(Model):
             "log": result,
         }
 
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+    def eval_helper(self, batch, prefix):
         loss, head_tag, child_tag, score_arc = self.forward(batch)
         lengths = self.get_mask(batch["sent"]).long().sum(dim=1).cpu().numpy()
         predicted_heads, predicted_labels = self._mst_decode(
@@ -482,7 +478,12 @@ class DependencyParser(Model):
             batch["first_subword_mask"], batch["pos_tags"]
         )
         # ignore ROOT evaluation by default as ROOT token is not first subword
-        self.metrics[batch["lang"]].add(
+        assert (
+            len(set(batch["lang"])) == 1
+        ), "eval batch should contain only one language"
+        lang = batch["lang"][0]
+
+        self.metrics[lang].add(
             batch["heads"],
             batch["labels"],
             predicted_heads,
@@ -491,32 +492,14 @@ class DependencyParser(Model):
         )
 
         result = dict()
-        lang = batch["lang"]
-        result[f"val_{lang}_loss"] = loss.view(1)
+        result[f"{prefix}_{lang}_loss"] = loss.view(1)
         return result
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        return self.eval_helper(batch, "val")
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
-        loss, head_tag, child_tag, score_arc = self.forward(batch)
-        lengths = self.get_mask(batch["sent"]).long().sum(dim=1).cpu().numpy()
-        predicted_heads, predicted_labels = self._mst_decode(
-            head_tag, child_tag, score_arc, batch["first_subword_mask"], lengths
-        )
-        evaluation_mask = self._get_mask_for_eval(
-            batch["first_subword_mask"], batch["pos_tags"]
-        )
-        # ignore ROOT evaluation by default as ROOT token is not first subword
-        self.metrics[batch["lang"]].add(
-            batch["heads"],
-            batch["labels"],
-            predicted_heads,
-            predicted_labels,
-            evaluation_mask,
-        )
-
-        result = dict()
-        lang = batch["lang"]
-        result[f"tst_{lang}_loss"] = loss.view(1)
-        return result
+        return self.eval_helper(batch, "tst")
 
     def prepare_data(self):
         hparams = self.hparams
