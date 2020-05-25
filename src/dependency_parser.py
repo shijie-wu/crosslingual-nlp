@@ -31,11 +31,28 @@ class DependencyParser(Model):
         self._metric = {Task.parsing: ParsingMetric()}[self.hparams.task]
 
         encode_dim = self.hidden_size
-        if hparams.parser_use_pos:
+        assert not (hparams.parser_use_pos and hparams.parser_use_predict_pos)
+        if hparams.parser_use_pos or hparams.parser_use_predict_pos:
+            if hparams.parser_use_pos:
+                nb_pos_tags = self.nb_pos_tags + 1
+                padding_idx = -1
+            elif hparams.parser_use_predict_pos:
+                assert (
+                    hparams.parser_predict_pos
+                ), "when parser_use_predict_pos is True, parser_predict_pos should also be True"
+                nb_pos_tags = self.nb_pos_tags
+                padding_idx = None
+            else:
+                raise ValueError(
+                    "parser_use_pos and parser_use_predict_pos are mutually exclusive"
+                )
             self.pos_embed = nn.Embedding(
-                self.nb_pos_tags + 1, hparams.parser_pos_dim, padding_idx=-1
+                nb_pos_tags, hparams.parser_pos_dim, padding_idx=padding_idx
             )
             encode_dim += hparams.parser_pos_dim
+
+        if hparams.parser_predict_pos:
+            self.pos_tagger = nn.Linear(self.hidden_size, self.nb_pos_tags)
 
         self.head_arc_ff = self._ff(
             encode_dim, hparams.parser_arc_dim, hparams.parser_dropout
@@ -111,10 +128,26 @@ class DependencyParser(Model):
         first_subword_mask = batch["first_subword_mask"]
 
         hs = self.encode_sent(sent, lang)
+        if self.hparams.parser_predict_pos:
+            logits = self.pos_tagger(hs)
+            log_probs = F.log_softmax(logits, dim=-1)
+            pos_nll = F.nll_loss(
+                log_probs.view(-1, self.nb_pos_tags),
+                batch["pos_tags"].view(-1),
+                ignore_index=LABEL_PAD_ID,
+            )
+        else:
+            log_probs = None
+            pos_nll = 0
+
         if self.hparams.parser_use_pos:
             hs_pos = self.pos_embed(
                 pos_tags.masked_fill(pos_tags < 0, self.nb_pos_tags)
             )
+            hs = torch.cat((hs, hs_pos), dim=-1)
+        elif self.hparams.parser_use_predict_pos:
+            assert log_probs is not None
+            hs_pos = F.linear(log_probs.exp().detach(), self.pos_embed.weight.t())
             hs = torch.cat((hs, hs_pos), dim=-1)
 
         head_arc = self.head_arc_ff(hs)
@@ -136,7 +169,7 @@ class DependencyParser(Model):
             head_tags=labels,
             mask=first_subword_mask,
         )
-        loss = arc_nll + tag_nll
+        loss = arc_nll + tag_nll + pos_nll
 
         return loss, head_tag, child_tag, score_arc
 
@@ -533,6 +566,8 @@ class DependencyParser(Model):
     @classmethod
     def add_model_specific_args(cls, parser):
         parser.add_argument("--parser_use_pos", default=False, type=str2bool)
+        parser.add_argument("--parser_predict_pos", default=False, type=str2bool)
+        parser.add_argument("--parser_use_predict_pos", default=False, type=str2bool)
         parser.add_argument("--parser_pos_dim", default=100, type=int)
         parser.add_argument("--parser_tag_dim", default=128, type=int)
         parser.add_argument("--parser_arc_dim", default=512, type=int)
