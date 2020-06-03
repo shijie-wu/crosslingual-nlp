@@ -90,9 +90,10 @@ def main(hparams):
         amp_level=hparams.amp_level,
         resume_from_checkpoint=hparams.resume_from_checkpoint,
     )
-    trainer.fit(model)
+    if hparams.do_train:
+        trainer.fit(model)
 
-    if hparams.tst_langs:
+    if hparams.do_test and hparams.tst_langs:
         best_model = {v: k for k, v in checkpoint_callback.best_k_models.items()}[
             checkpoint_callback.best
         ]
@@ -108,6 +109,8 @@ if __name__ == "__main__":
     parser.add_argument("--min_delta", default=1e-3, type=float)
     parser.add_argument("--patience", default=10, type=int)
     parser.add_argument("--save_top_k", default=1, type=int)
+    parser.add_argument("--do_train", default=True, type=util.str2bool)
+    parser.add_argument("--do_test", default=True, type=util.str2bool)
     parser.add_argument("--cache_dataset", default=False, type=util.str2bool)
     parser.add_argument("--cache_path", default="", type=str)
     ############################################################################

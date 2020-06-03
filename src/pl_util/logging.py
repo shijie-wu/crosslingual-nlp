@@ -36,5 +36,5 @@ class Logging(Callback):
                 for k, v in trainer.callback_metrics.items()
                 if k.startswith("tst_") or k == "select"
             }
-            assert "select" in logs
+            # assert "select" in logs
             print(json.dumps(logs), file=fp)

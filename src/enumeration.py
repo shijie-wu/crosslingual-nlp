@@ -17,8 +17,8 @@ class Task(NamedEnum):
     pawsx = "pawsx"
     mldoc = "mldoc"
     langid = "langid"
-    conllner = "conllner"
-    wikiner = "wikiner"
+    conllner = "ner-conll"
+    wikiner = "ner-wiki"
     udpos = "udpos"
     parsing = "parsing"
 
