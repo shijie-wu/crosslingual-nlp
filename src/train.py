@@ -19,6 +19,7 @@ def main(hparams):
         Task.wikiner: Tagger,
         Task.udpos: Tagger,
         Task.xnli: Classifier,
+        Task.pawsx: Classifier,
         Task.mldoc: Classifier,
         Task.langid: Classifier,
         Task.parsing: DependencyParser,

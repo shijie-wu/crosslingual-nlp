@@ -14,6 +14,7 @@ class Split(NamedEnum):
 
 class Task(NamedEnum):
     xnli = "xnli"
+    pawsx = "pawsx"
     mldoc = "mldoc"
     langid = "langid"
     conllner = "conllner"

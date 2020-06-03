@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from base_model import Model
-from dataset import LanguageID, MLDoc, Xnli
+from dataset import LanguageID, MLDoc, Xnli, PawsX
 from enumeration import Split, Task
 from metric import AccuracyMetric
 
@@ -15,22 +15,28 @@ class Classifier(Model):
     def __init__(self, hparams):
         super(Classifier, self).__init__(hparams)
 
-        self._comparsion = {Task.xnli: "max", Task.mldoc: "max", Task.langid: "max"}[
-            self.hparams.task
-        ]
+        self._comparsion = {
+            Task.xnli: "max",
+            Task.pawsx: "max",
+            Task.mldoc: "max",
+            Task.langid: "max",
+        }[self.hparams.task]
         self._selection_criterion = {
             Task.xnli: "val_acc",
+            Task.pawsx: "val_acc",
             Task.mldoc: "val_acc",
             Task.langid: "val_acc",
         }[self.hparams.task]
         self._nb_labels: Optional[int] = None
         self._nb_labels = {
             Task.xnli: Xnli.nb_labels(),
+            Task.pawsx: PawsX.nb_labels(),
             Task.mldoc: MLDoc.nb_labels(),
             Task.langid: LanguageID.nb_labels(),
         }[self.hparams.task]
         self._metric = {
             Task.xnli: AccuracyMetric(),
+            Task.pawsx: AccuracyMetric(),
             Task.mldoc: AccuracyMetric(),
             Task.langid: AccuracyMetric(),
         }[self.hparams.task]
@@ -99,6 +105,8 @@ class Classifier(Model):
         hparams = self.hparams
         if hparams.task == Task.xnli:
             data_class = Xnli
+        elif hparams.task == Task.pawsx:
+            data_class = PawsX
         elif hparams.task == Task.mldoc:
             data_class = MLDoc
         elif hparams.task == Task.langid:

@@ -214,6 +214,34 @@ class Xnli(ClassificationDataset):
         return fp
 
 
+class PawsX(ClassificationDataset):
+    @classmethod
+    def get_labels(cls) -> List[str]:
+        return ["0", "1"]
+
+    def read_file(self, filepath) -> Iterator[Dict]:
+        for row in self.read_csv(filepath, delimiter="\t"):
+            sent1 = row["sentence1"]
+            sent2 = row["sentence2"]
+            label = row["label"]
+            yield {"sent1": sent1, "sent2": sent2, "label": label}
+
+    @classmethod
+    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+        if split == Split.train:
+            if lang == "en":
+                fp = f"{path}/{lang}/train.tsv"
+            else:
+                fp = f"{path}/{lang}/translated_train.tsv"
+        elif split == Split.dev:
+            fp = f"{path}/{lang}/dev_2k.tsv"
+        elif split == Split.test:
+            fp = f"{path}/{lang}/test_2k.tsv"
+        else:
+            raise ValueError(f"Unsupported split: {split}")
+        return fp
+
+
 class MLDoc(ClassificationDataset):
     @classmethod
     def get_labels(cls) -> List[str]:
