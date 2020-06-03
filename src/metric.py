@@ -156,10 +156,11 @@ class NERMetric(Metric):
     def add(self, gold, prediction):
         """
         gold is label
-        prediction is logits
+        prediction is logits (batch_size, seq_len, num_labels) or prediction (batch_size, seq_len)
         """
         gold, prediction = self.unpack(gold, prediction)
-        _, prediction = torch.max(prediction, dim=-1)
+        if prediction.dim() > 2:
+            _, prediction = torch.max(prediction, dim=-1)
         bs, seq_len = prediction.shape
         for ii in range(bs):
             goldseq, predseq = [], []

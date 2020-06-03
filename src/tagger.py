@@ -5,10 +5,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from metric import NERMetric, POSMetric
+import util
 from base_model import Model
+from crf import ChainCRF
 from dataset import LABEL_PAD_ID, ConllNER, UdPOS, WikiAnnNER
 from enumeration import Split, Task
+from metric import NERMetric, POSMetric
 
 
 class Tagger(Model):
@@ -37,7 +39,10 @@ class Tagger(Model):
             Task.udpos: POSMetric(),
         }[self.hparams.task]
 
-        self.classifier = nn.Linear(self.hidden_size, self.nb_labels)
+        if hparams.tagger_use_crf:
+            self.crf = ChainCRF(self.hidden_size, self.nb_labels, bigram=True)
+        else:
+            self.classifier = nn.Linear(self.hidden_size, self.nb_labels)
         self.padding = {
             "sent": self.tokenizer.pad_token_id,
             "lang": 0,
@@ -57,14 +62,23 @@ class Tagger(Model):
     def forward(self, batch):
         batch = self.preprocess_batch(batch)
         hs = self.encode_sent(batch["sent"], batch["lang"])
-        logits = self.classifier(hs)
-        log_probs = F.log_softmax(logits, dim=-1)
+        if self.hparams.tagger_use_crf:
+            mask = (batch["labels"] != LABEL_PAD_ID).float()
+            energy = self.crf(hs, mask=mask)
+            target = batch["labels"].masked_fill(
+                batch["labels"] == LABEL_PAD_ID, self.nb_labels
+            )
+            loss = self.crf.loss(energy, target, mask=mask)
+            log_probs = energy
+        else:
+            logits = self.classifier(hs)
+            log_probs = F.log_softmax(logits, dim=-1)
 
-        loss = F.nll_loss(
-            log_probs.view(-1, self.nb_labels),
-            batch["labels"].view(-1),
-            ignore_index=LABEL_PAD_ID,
-        )
+            loss = F.nll_loss(
+                log_probs.view(-1, self.nb_labels),
+                batch["labels"].view(-1),
+                ignore_index=LABEL_PAD_ID,
+            )
         return loss, log_probs
 
     def training_step(self, batch, batch_idx):
@@ -85,7 +99,14 @@ class Tagger(Model):
             len(set(batch["lang"])) == 1
         ), "eval batch should contain only one language"
         lang = batch["lang"][0]
-        self.metrics[lang].add(batch["labels"], log_probs)
+        if self.hparams.tagger_use_crf:
+            energy = log_probs
+            prediction = self.crf.decode(
+                energy, mask=(batch["labels"] != LABEL_PAD_ID).float()
+            )
+            self.metrics[lang].add(batch["labels"], prediction)
+        else:
+            self.metrics[lang].add(batch["labels"], log_probs)
 
         result = dict()
         result[f"{prefix}_{lang}_loss"] = loss.view(1)
@@ -120,4 +141,5 @@ class Tagger(Model):
 
     @classmethod
     def add_model_specific_args(cls, parser):
+        parser.add_argument("--tagger_use_crf", default=False, type=util.str2bool)
         return parser
