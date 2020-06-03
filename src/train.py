@@ -2,15 +2,16 @@ import os
 from argparse import ArgumentParser
 
 import pytorch_lightning as pl
+import torch
 
 import util
 from base_model import Model
 from classifier import Classifier
+from dependency_parser import DependencyParser
 from enumeration import Task
 from pl_util.early_stopping import EarlyStopping
 from pl_util.logging import Logging
 from tagger import Tagger
-from dependency_parser import DependencyParser
 
 
 def main(hparams):
@@ -51,6 +52,7 @@ def main(hparams):
         hparams.exp_name,
         f"version_{logger.version}" if logger.version is not None else "",
     )
+    model.base_dir = base_dir
     filepath = os.path.join(
         base_dir, "ckpts", "ckpts_{epoch}-{%s:.3f}" % model.selection_criterion,
     )
@@ -90,13 +92,14 @@ def main(hparams):
     )
     trainer.fit(model)
 
-    best_model = {v: k for k, v in checkpoint_callback.best_k_models.items()}[
-        checkpoint_callback.best
-    ]
-    assert "select" not in trainer.callback_metrics
-    trainer.callback_metrics["select"] = checkpoint_callback.best
-    model = model.load_from_checkpoint(best_model)
-    trainer.test(model)
+    if hparams.tst_langs:
+        best_model = {v: k for k, v in checkpoint_callback.best_k_models.items()}[
+            checkpoint_callback.best
+        ]
+        assert "select" not in trainer.callback_metrics
+        trainer.callback_metrics["select"] = checkpoint_callback.best
+        model = model.load_from_checkpoint(best_model)
+        trainer.test(model)
 
 
 if __name__ == "__main__":

@@ -109,6 +109,9 @@ class AccuracyMetric(Metric):
 
     def get_metric(self):
         acc = metrics.accuracy_score(self.gold, self.prediction)
+        # check nan
+        if float(acc) != acc:
+            acc = 0.0
         return {"acc": acc * 100}
 
     def reset(self):
@@ -139,7 +142,10 @@ class POSMetric(Metric):
                 self.num_tokens += 1
 
     def get_metric(self):
-        acc = self.num_correct / self.num_tokens
+        try:
+            acc = self.num_correct / self.num_tokens
+        except ZeroDivisionError:
+            acc = 0
         return {"acc": acc * 100}
 
     def reset(self):

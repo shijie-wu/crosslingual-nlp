@@ -34,7 +34,8 @@ class Model(pl.LightningModule):
         self.trn_datasets: List[Dataset] = None
         self.val_datasets: List[Dataset] = None
         self.tst_datasets: List[Dataset] = None
-        self.padding = {}
+        self.padding: Dict[str, int] = {}
+        self.base_dir: str = ""
 
         self._comparsion: Optional[str] = None
         self._selection_criterion: Optional[str] = None
@@ -157,13 +158,17 @@ class Model(pl.LightningModule):
         sent: Tensor,
         langs: Optional[List[str]] = None,
         segment: Optional[Tensor] = None,
+        model: Optional[transformers.PreTrainedModel] = None,
+        return_raw_hidden_states: bool = False,
     ):
+        if model is None:
+            model = self.model
         mask = self.get_mask(sent)
-        if isinstance(self.model, transformers.BertModel):
-            _, _, hidden_states = self.model(
+        if isinstance(model, transformers.BertModel):
+            _, _, hidden_states = model(
                 input_ids=sent, attention_mask=mask, token_type_ids=segment
             )
-        elif isinstance(self.model, transformers.XLMModel):
+        elif isinstance(model, transformers.XLMModel):
             if langs is not None:
                 try:
                     batch_size, seq_len = sent.shape
@@ -173,21 +178,25 @@ class Model(pl.LightningModule):
                 except KeyError as e:
                     print(f"KeyError with missing language {e}")
                     langs = None
-            _, hidden_states = self.model(
+            _, hidden_states = model(
                 input_ids=sent, attention_mask=mask, langs=langs, token_type_ids=segment
             )
         else:
             raise ValueError("Unsupported model")
 
+        if return_raw_hidden_states:
+            return hidden_states
+
+        hs = self.map_feature(hidden_states, langs)
         hs = self.process_feature(hidden_states)
         hs = self.dropout(hs)
         hs = self.projector(hs, mask)
         return hs
 
+    def map_feature(self, hidden_states: List[Tensor], langs):
+        return hidden_states
+
     def process_feature(self, hidden_states: List[Tensor]):
-        assert (
-            bool(self.hparams.weighted_feature) + bool(self.hparams.first_feature) <= 1
-        )
         if self.hparams.weighted_feature:
             hs: Tensor = torch.stack(hidden_states)
             weight = F.softmax(self.weight, dim=0).view(-1, 1, 1, 1)
@@ -195,9 +204,6 @@ class Model(pl.LightningModule):
             hs = hs.sum(dim=0)
         else:
             hs = hidden_states[self.hparams.feature_layer]
-            # if self.hparams.first_feature:
-            #     # hs: (batch_size, sequence_length, hidden_size)
-            #     hs = hs[:, 0, :]
         return hs
 
     def training_epoch_end(self, outputs):
@@ -406,7 +412,7 @@ class Model(pl.LightningModule):
         return [
             DataLoader(
                 val_dataset,
-                batch_size=self.hparams.batch_size,
+                batch_size=self.hparams.eval_batch_size,
                 shuffle=False,
                 pin_memory=True,
                 drop_last=False,
@@ -421,7 +427,7 @@ class Model(pl.LightningModule):
         return [
             DataLoader(
                 tst_dataset,
-                batch_size=self.hparams.batch_size,
+                batch_size=self.hparams.eval_batch_size,
                 shuffle=False,
                 pin_memory=True,
                 drop_last=False,
@@ -439,7 +445,7 @@ class Model(pl.LightningModule):
         parser.add_argument("--data_dir", required=True, type=str)
         parser.add_argument("--trn_langs", required=True, nargs="+", type=str)
         parser.add_argument("--val_langs", required=True, nargs="+", type=str)
-        parser.add_argument("--tst_langs", required=True, nargs="+", type=str)
+        parser.add_argument("--tst_langs", default=[], nargs="*", type=str)
         parser.add_argument("--max_trn_len", default=128, type=int)
         parser.add_argument("--max_tst_len", default=128, type=int)
         parser.add_argument("--subset_ratio", default=1.0, type=float)
@@ -469,6 +475,7 @@ class Model(pl.LightningModule):
         parser.add_argument("--adam_eps", default=1e-8, type=float)
         parser.add_argument("--weight_decay", default=0.0, type=float)
         parser.add_argument("--batch_size", default=32, type=int)
+        parser.add_argument("--eval_batch_size", default=32, type=int)
         parser.add_argument(
             "--schedule",
             default=Schedule.linear,

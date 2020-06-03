@@ -21,7 +21,7 @@ def sent_tokenize(text, lang="en"):
     lang = langcodes.Language(lang).language_name().lower()
     try:
         return nltk_sent_tokenize(text, language=lang)
-    except LookupError:
+    except (LookupError, KeyError) as e:
         return nltk_sent_tokenize(text)
 
 
@@ -265,6 +265,16 @@ class MLDoc(ClassificationDataset):
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+        lang = {
+            "zh": "chinese",
+            "en": "english",
+            "fr": "french",
+            "de": "german",
+            "it": "italian",
+            "ja": "japanese",
+            "ru": "russian",
+            "es": "spanish",
+        }[lang]
         if split == Split.train:
             fp = f"{path}/{lang}.train.1000"
         elif split == Split.dev:
