@@ -1,3 +1,6 @@
+import hashlib
+import json
+import os
 from argparse import ArgumentParser
 from collections import defaultdict
 from copy import deepcopy
@@ -313,6 +316,20 @@ class Model(pl.LightningModule):
         else:
             return self.scheduler.get_last_lr()[0]
 
+    def _get_signature(self, params: Dict):
+        def md5_helper(obj):
+            return hashlib.md5(str(obj).encode()).hexdigest()
+
+        signature = dict()
+        for key, val in params.items():
+            if key == "tokenizer" and isinstance(val, transformers.PreTrainedTokenizer):
+                signature[key] = md5_helper(list(val.get_vocab().items()))
+            else:
+                signature[key] = str(val)
+
+        md5 = md5_helper(list(signature.items()))
+        return md5, signature
+
     def prepare_datasets(
         self,
         data_class: Dataset,
@@ -337,7 +354,20 @@ class Model(pl.LightningModule):
                 params["subset_ratio"] = self.hparams.subset_ratio
                 params["subset_count"] = self.hparams.subset_count
                 params["subset_seed"] = self.hparams.subset_seed
-            datasets.append(data_class(**params, **kwargs))
+            params.update(kwargs)
+            md5, signature = self._get_signature(params)
+            cache_file = f"{self.hparams.cache_path}/{md5}"
+            if self.hparams.cache_dataset and os.path.isfile(cache_file):
+                print(f"load from cache {filepath} with {self.hparams.pretrain}")
+                dataset = torch.load(cache_file)
+            else:
+                dataset = data_class(**params)
+                if self.hparams.cache_dataset:
+                    print(f"save to cache {filepath} with {self.hparams.pretrain}")
+                    torch.save(dataset, cache_file)
+                    with open(f"{cache_file}.json", "w") as fp:
+                        json.dump(signature, fp)
+            datasets.append(dataset)
         return datasets
 
     def train_dataloader(self):
