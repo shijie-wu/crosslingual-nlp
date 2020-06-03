@@ -132,12 +132,21 @@ class Model(pl.LightningModule):
             metric.reset()
 
     def build_projector(self):
-        if self.hparams.projector == "id":
+        hparams = self.hparams
+        if hparams.projector == "id":
             return module.Identity()
-        elif self.hparams.projector == "meanpool":
+        elif hparams.projector == "meanpool":
             return module.MeanPooling()
+        elif hparams.projector == "transformer":
+            return module.Transformer(
+                input_dim=self.hidden_size,
+                hidden_dim=hparams.projector_trm_hidden_size,
+                num_heads=hparams.projector_trm_num_heads,
+                dropout=hparams.projector_dropout,
+                num_layers=hparams.projector_trm_num_layers,
+            )
         else:
-            raise ValueError(self.hparams.projector)
+            raise ValueError(hparams.projector)
 
     def get_mask(self, sent: Tensor):
         mask = (sent != self.tokenizer.pad_token_id).long()
@@ -442,10 +451,16 @@ class Model(pl.LightningModule):
         parser.add_argument("--freeze_layer", default=-1, type=int)
         parser.add_argument("--feature_layer", default=-1, type=int)
         parser.add_argument("--weighted_feature", default=False, type=util.str2bool)
-        parser.add_argument("--first_feature", default=False, type=util.str2bool)
         parser.add_argument(
-            "--projector", default="id", choices=["id", "meanpool"], type=str
+            "--projector",
+            default="id",
+            choices=["id", "meanpool", "transformer"],
+            type=str,
         )
+        parser.add_argument("--projector_trm_hidden_size", default=3072, type=int)
+        parser.add_argument("--projector_trm_num_heads", default=12, type=int)
+        parser.add_argument("--projector_trm_num_layers", default=4, type=int)
+        parser.add_argument("--projector_dropout", default=0.2, type=float)
         parser.add_argument("--input_dropout", default=0.2, type=float)
         # misc
         parser.add_argument("--seed", default=42, type=int)

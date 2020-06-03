@@ -15,6 +15,32 @@ class MeanPooling(nn.Module):
         return x.sum(dim=1) / seq_len
 
 
+class Transformer(nn.Module):
+    def __init__(
+        self,
+        *,
+        input_dim,
+        hidden_dim,
+        num_heads,
+        dropout,
+        num_layers,
+        activation="relu"
+    ):
+        super().__init__()
+        trm_layer = nn.TransformerEncoderLayer(
+            input_dim,
+            num_heads,
+            dim_feedforward=hidden_dim,
+            dropout=dropout,
+            activation=activation,
+        )
+        self.trm = nn.TransformerEncoder(trm_layer, num_layers)
+
+    def forward(self, x, mask):
+        x = self.trm(x.transpose(0, 1), src_key_padding_mask=(mask == 0))
+        return x.transpose(0, 1)
+
+
 class InputVariationalDropout(torch.nn.Dropout):
     """
     Apply the dropout technique in Gal and Ghahramani, "Dropout as a Bayesian
