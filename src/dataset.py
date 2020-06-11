@@ -36,7 +36,7 @@ class Dataset(torch.utils.data.Dataset):
         tokenizer: Tokenizer,
         filepath: str,
         lang: str,
-        split: Optional[Split] = None,
+        split: Optional[str] = None,
         max_len: Optional[int] = None,
         subset_ratio: float = 1,
         subset_count: int = -1,
@@ -118,7 +118,7 @@ class Dataset(torch.utils.data.Dataset):
         self.data = data
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         raise NotImplementedError
 
 
@@ -202,7 +202,7 @@ class Xnli(ClassificationDataset):
                 raise ValueError(f"Unsupported split: {self.split}")
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             fp = f"{path}/multinli/multinli.train.{lang}.tsv"
         elif split == Split.dev:
@@ -227,7 +227,7 @@ class PawsX(ClassificationDataset):
             yield {"sent1": sent1, "sent2": sent2, "label": label}
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             if lang == "en":
                 fp = f"{path}/{lang}/train.tsv"
@@ -264,7 +264,7 @@ class MLDoc(ClassificationDataset):
                 yield {"sent1": sent1, "sent2": sent2, "label": label}
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         lang = {
             "zh": "chinese",
             "en": "english",
@@ -292,7 +292,7 @@ class LanguageID(MLDoc):
         return constant.LANDID_LABEL
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             fp = f"{path}/langid.train"
         elif split == Split.dev:
@@ -408,7 +408,7 @@ class ConllNER(TaggingDataset):
                 yield {"sent": words, "labels": labels}
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             fp = f"{path}/{lang}/train.iob2.txt"
         elif split == Split.dev:
@@ -445,7 +445,7 @@ class WikiAnnNER(TaggingDataset):
                 yield {"sent": words, "labels": labels}
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             fp = f"{path}/{lang}/train"
         elif split == Split.dev:
@@ -481,7 +481,7 @@ class UdPOS(TaggingDataset):
                 yield {"sent": words, "labels": labels}
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             fp = f"{path}/UD_{lang}/*-ud-train.conllu"
         elif split == Split.dev:
@@ -639,7 +639,7 @@ class ParsingDataset(Dataset):
         ]
 
     @classmethod
-    def get_file(cls, path: str, lang: str, split: Split) -> Optional[str]:
+    def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
         if split == Split.train:
             fp = f"{path}/UD_{lang}/*-ud-train.conllu"
         elif split == Split.dev:

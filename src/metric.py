@@ -45,6 +45,14 @@ def convert_bio_to_spans(bio_sequence):
     return spans
 
 
+def to_tensor(wrapped_func):
+    def func(*args, **kwargs):
+        result = wrapped_func(*args, **kwargs)
+        return {k: torch.tensor(v, dtype=torch.float) for k, v in result.items()}
+
+    return func
+
+
 class Metric(object):
     def add(self, gold, prediction):
         raise NotImplementedError
@@ -73,6 +81,7 @@ class BinaryClassificationMetric(Metric):
         self.gold.extend(gold.tolist())
         self.prediction.extend(prediction.tolist())
 
+    @to_tensor
     def get_metric(self):
         acc = metrics.accuracy_score(self.gold, self.prediction)
         recall = metrics.recall_score(
@@ -107,6 +116,7 @@ class AccuracyMetric(Metric):
         self.gold.extend(gold.tolist())
         self.prediction.extend(prediction.tolist())
 
+    @to_tensor
     def get_metric(self):
         acc = metrics.accuracy_score(self.gold, self.prediction)
         # check nan
@@ -141,6 +151,7 @@ class POSMetric(Metric):
                     self.num_correct += 1
                 self.num_tokens += 1
 
+    @to_tensor
     def get_metric(self):
         try:
             acc = self.num_correct / self.num_tokens
@@ -190,6 +201,7 @@ class NERMetric(Metric):
             self.fp += len(predspans_set - goldspans_set)
             self.fn += len(goldspans_set - predspans_set)
 
+    @to_tensor
     def get_metric(self):
         try:
             prec = self.tp / (self.tp + self.fp)
@@ -279,6 +291,7 @@ class ParsingMetric(Metric):
         self._total_sentences += correct_indices.size(0)
         self._total_words += correct_indices.numel() - (1 - mask).sum().item()
 
+    @to_tensor
     def get_metric(self):
         unlabeled_attachment_score = 0.0
         labeled_attachment_score = 0.0

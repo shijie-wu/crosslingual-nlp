@@ -1,11 +1,11 @@
 import hashlib
 import json
 import os
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from collections import defaultdict
 from copy import deepcopy
 from functools import partial
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import numpy as np
 import pytorch_lightning as pl
@@ -40,8 +40,10 @@ class Model(pl.LightningModule):
         self._comparsion: Optional[str] = None
         self._selection_criterion: Optional[str] = None
 
+        if isinstance(hparams, dict):
+            hparams = Namespace(**hparams)
         self.hparams = hparams
-        util.set_seed(hparams.seed)
+        pl.seed_everything(hparams.seed)
 
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.pretrain)
         config = AutoConfig.from_pretrained(hparams.pretrain, output_hidden_states=True)
@@ -211,18 +213,18 @@ class Model(pl.LightningModule):
 
     def aggregate_outputs(self, outputs, langs: List[str], prefix: str):
         assert prefix in ["val", "tst"]
-        result: Dict[str, Union[float, Tensor]] = {}
+        result: Dict[str, Tensor] = {}
         aver_result = defaultdict(list)
         for lang, output in zip(langs, outputs):
             for key in output[0]:
-                mean_val = torch.cat([x[key] for x in output]).mean()
+                mean_val = torch.stack([x[key] for x in output]).mean()
                 result[key] = mean_val
 
                 raw_key = key.replace(f"{lang}_", "")
-                aver_result[raw_key].append(mean_val.item())
+                aver_result[raw_key].append(mean_val)
 
         for key, vals in aver_result.items():
-            result[key] = np.mean(vals)
+            result[key] = torch.stack(vals).mean()
 
         aver_metric = defaultdict(list)
         for lang, metric in self.metrics.items():
@@ -232,7 +234,7 @@ class Model(pl.LightningModule):
                 aver_metric[key].append(val)
 
         for key, vals in aver_metric.items():
-            result[f"{prefix}_{key}"] = np.mean(vals)
+            result[f"{prefix}_{key}"] = torch.stack(vals).mean()
 
         return {
             f"{prefix}_loss": result[f"{prefix}_loss"],
@@ -325,12 +327,6 @@ class Model(pl.LightningModule):
             scheduler_dict["monitor"] = "val_loss"
         return [optimizer], [scheduler_dict]
 
-    def get_lr(self):
-        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            return self.optimizer.param_groups[0]["lr"]
-        else:
-            return self.scheduler.get_last_lr()[0]
-
     def _get_signature(self, params: Dict):
         def md5_helper(obj):
             return hashlib.md5(str(obj).encode()).hexdigest()
@@ -346,12 +342,7 @@ class Model(pl.LightningModule):
         return md5, signature
 
     def prepare_datasets(
-        self,
-        data_class: Dataset,
-        langs: List[str],
-        split: Split,
-        max_len: int,
-        **kwargs,
+        self, data_class: Dataset, langs: List[str], split: str, max_len: int, **kwargs,
     ):
         datasets = []
         for lang in langs:
@@ -440,8 +431,9 @@ class Model(pl.LightningModule):
     @classmethod
     def add_model_specific_args(cls, parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
+        # fmt: off
         # shared
-        parser.add_argument("--task", required=True, choices=list(Task), type=Task)
+        parser.add_argument("--task", required=True, choices=Task().choices(), type=str)
         parser.add_argument("--data_dir", required=True, type=str)
         parser.add_argument("--trn_langs", required=True, nargs="+", type=str)
         parser.add_argument("--val_langs", required=True, nargs="+", type=str)
@@ -457,12 +449,7 @@ class Model(pl.LightningModule):
         parser.add_argument("--freeze_layer", default=-1, type=int)
         parser.add_argument("--feature_layer", default=-1, type=int)
         parser.add_argument("--weighted_feature", default=False, type=util.str2bool)
-        parser.add_argument(
-            "--projector",
-            default="id",
-            choices=["id", "meanpool", "transformer"],
-            type=str,
-        )
+        parser.add_argument("--projector", default="id", choices=["id", "meanpool", "transformer"], type=str)
         parser.add_argument("--projector_trm_hidden_size", default=3072, type=int)
         parser.add_argument("--projector_trm_num_heads", default=12, type=int)
         parser.add_argument("--projector_trm_num_layers", default=4, type=int)
@@ -476,12 +463,8 @@ class Model(pl.LightningModule):
         parser.add_argument("--weight_decay", default=0.0, type=float)
         parser.add_argument("--batch_size", default=32, type=int)
         parser.add_argument("--eval_batch_size", default=32, type=int)
-        parser.add_argument(
-            "--schedule",
-            default=Schedule.linear,
-            choices=list(Schedule),
-            type=Schedule,
-        )
+        parser.add_argument("--schedule", default=Schedule.linear, choices=Schedule().choices(), type=str)
         parser.add_argument("--warmup_steps", default=-1, type=int)
         parser.add_argument("--warmup_portion", default=-1, type=float)
+        # fmt: on
         return parser

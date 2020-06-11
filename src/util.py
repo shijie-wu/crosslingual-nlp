@@ -1,21 +1,15 @@
 import argparse
-import random
+import json
+import os
 import re
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from pytorch_lightning.callbacks.base import Callback
 from torch._six import container_abcs, int_classes, string_classes
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import ConcatDataset, RandomSampler, Sampler
-
-
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
 
 
 def str2bool(v):
@@ -27,6 +21,44 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+class Logging(Callback):
+    def __init__(self, save_dir: str):
+        super().__init__()
+        self.filename = os.path.join(save_dir, "results.jsonl")
+
+    def on_validation_start(self, trainer, pl_module):
+        """Called when the validation loop begins."""
+        pl_module.reset_metrics()
+
+    def on_validation_end(self, trainer, pl_module):
+        """Called when the validation loop ends."""
+        with open(self.filename, "a") as fp:
+            logs = dict()
+            for k, v in trainer.callback_metrics.items():
+                if k.startswith("val_"):
+                    if isinstance(v, torch.Tensor):
+                        v = v.item()
+                    logs[k] = v
+            logs["step"] = trainer.global_step
+            print(json.dumps(logs), file=fp)
+
+    def on_test_start(self, trainer, pl_module):
+        """Called when the test begins."""
+        pl_module.reset_metrics()
+
+    def on_test_end(self, trainer, pl_module):
+        """Called when the test ends."""
+        with open(self.filename, "a") as fp:
+            logs = dict()
+            for k, v in trainer.callback_metrics.items():
+                if k.startswith("tst_") or k == "select":
+                    if isinstance(v, torch.Tensor):
+                        v = v.item()
+                    logs[k] = v
+            # assert "select" in logs
+            print(json.dumps(logs), file=fp)
 
 
 def freeze(module):

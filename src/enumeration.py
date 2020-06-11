@@ -1,29 +1,33 @@
-from enum import Enum
+from dataclasses import asdict, dataclass
 
 
-class NamedEnum(Enum):
-    def __str__(self):
-        return self.value
+@dataclass
+class Enum:
+    def choices(self):
+        return list(asdict(self).values())
 
 
-class Split(NamedEnum):
-    train = "train"
-    dev = "dev"
-    test = "test"
+@dataclass
+class Split(Enum):
+    train: str = "train"
+    dev: str = "dev"
+    test: str = "test"
 
 
-class Task(NamedEnum):
-    xnli = "xnli"
-    pawsx = "pawsx"
-    mldoc = "mldoc"
-    langid = "langid"
-    conllner = "ner-conll"
-    wikiner = "ner-wiki"
-    udpos = "udpos"
-    parsing = "parsing"
+@dataclass
+class Task(Enum):
+    xnli: str = "xnli"
+    pawsx: str = "pawsx"
+    mldoc: str = "mldoc"
+    langid: str = "langid"
+    conllner: str = "ner-conll"
+    wikiner: str = "ner-wiki"
+    udpos: str = "udpos"
+    parsing: str = "parsing"
 
 
-class Schedule(NamedEnum):
-    linear = "linear"
-    invsqroot = "invsqroot"
-    reduceOnPlateau = "reduceOnPlateau"
+@dataclass
+class Schedule(Enum):
+    linear: str = "linear"
+    invsqroot: str = "invsqroot"
+    reduceOnPlateau: str = "reduceOnPlateau"

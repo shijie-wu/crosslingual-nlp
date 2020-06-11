@@ -31,6 +31,7 @@ class DependencyParser(Model):
         self._metric = {Task.parsing: ParsingMetric()}[self.hparams.task]
 
         encode_dim = self.hidden_size
+        hparams = self.hparams
         assert not (hparams.parser_use_pos and hparams.parser_use_predict_pos)
         if hparams.parser_use_pos or hparams.parser_use_predict_pos:
             if hparams.parser_use_pos:
@@ -491,13 +492,11 @@ class DependencyParser(Model):
         return new_mask
 
     def training_step(self, batch, batch_idx):
-        result = {"lr": self.get_lr()}
-
+        result = {}
         loss, _, _, _ = self.forward(batch)
         result["loss"] = loss
         return {
             "loss": result["loss"],
-            "progress_bar": {"lr": result["lr"]},
             "log": result,
         }
 
@@ -525,7 +524,7 @@ class DependencyParser(Model):
         )
 
         result = dict()
-        result[f"{prefix}_{lang}_loss"] = loss.view(1)
+        result[f"{prefix}_{lang}_loss"] = loss
         return result
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
@@ -534,34 +533,38 @@ class DependencyParser(Model):
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         return self.eval_helper(batch, "tst")
 
-    def prepare_data(self):
+    def prepare_data(self, split=Split.train):
         hparams = self.hparams
         if self.hparams.task == Task.parsing:
             data_class = ParsingDataset
         else:
             raise ValueError(f"Unsupported task: {hparams.task}")
 
-        self.trn_datasets = self.prepare_datasets(
-            data_class,
-            hparams.trn_langs,
-            Split.train,
-            hparams.max_trn_len,
-            max_len_unit="subword",
-        )
-        self.val_datasets = self.prepare_datasets(
-            data_class,
-            hparams.val_langs,
-            Split.dev,
-            hparams.max_tst_len,
-            max_len_unit="word",
-        )
-        self.tst_datasets = self.prepare_datasets(
-            data_class,
-            hparams.tst_langs,
-            Split.test,
-            hparams.max_tst_len,
-            max_len_unit="word",
-        )
+        if split == Split.train:
+            self.trn_datasets = self.prepare_datasets(
+                data_class,
+                hparams.trn_langs,
+                Split.train,
+                hparams.max_trn_len,
+                max_len_unit="subword",
+            )
+            self.val_datasets = self.prepare_datasets(
+                data_class,
+                hparams.val_langs,
+                Split.dev,
+                hparams.max_tst_len,
+                max_len_unit="word",
+            )
+        elif split == Split.test:
+            self.tst_datasets = self.prepare_datasets(
+                data_class,
+                hparams.tst_langs,
+                Split.test,
+                hparams.max_tst_len,
+                max_len_unit="word",
+            )
+        else:
+            raise ValueError(f"Unsupported split: {split}")
 
     @classmethod
     def add_model_specific_args(cls, parser):
