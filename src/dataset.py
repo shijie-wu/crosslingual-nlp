@@ -4,9 +4,9 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 import langcodes
 import numpy as np
-import torch
 import transformers
 from nltk.tokenize import sent_tokenize as nltk_sent_tokenize
+from torch.utils.data import Dataset as TorchDataset
 from tqdm import tqdm
 
 import constant
@@ -21,7 +21,7 @@ def sent_tokenize(text, lang="en"):
     lang = langcodes.Language(lang).language_name().lower()
     try:
         return nltk_sent_tokenize(text, language=lang)
-    except (LookupError, KeyError) as e:
+    except (LookupError, KeyError):
         return nltk_sent_tokenize(text)
 
 
@@ -29,7 +29,7 @@ class Tokenizer(transformers.PreTrainedTokenizer):
     pass
 
 
-class Dataset(torch.utils.data.Dataset):
+class Dataset(TorchDataset):
     def __init__(
         self,
         *,

@@ -290,7 +290,9 @@ class DependencyParser(Model):
             dependency tags of the greedily decoded heads of each word.
         """
         # Mask the diagonal, because the head of a word can't be itself.
-        score_arc = score_arc + torch.diag(score_arc.new(mask.size(1)).fill_(-np.inf))
+        score_arc = score_arc + torch.diag(
+            torch.zeros(mask.size(1), device=score_arc.device).fill_(-np.inf)
+        )
         # Mask padded tokens, because we only want to consider actual words as heads.
         if mask is not None:
             minus_mask = ~mask.unsqueeze(2)
@@ -312,7 +314,7 @@ class DependencyParser(Model):
         child_tag: torch.Tensor,
         score_arc: torch.Tensor,
         mask: torch.BoolTensor,
-        lengths: torch.Tensor,
+        lengths: np.ndarray,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Decodes the head and head tag predictions using the Edmonds' Algorithm
@@ -384,7 +386,7 @@ class DependencyParser(Model):
 
     @staticmethod
     def _run_mst_decoding(
-        batch_energy: torch.Tensor, lengths: torch.Tensor
+        batch_energy: torch.Tensor, lengths: np.ndarray,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         heads = []
         head_tags = []
@@ -467,7 +469,7 @@ class DependencyParser(Model):
 
     def _get_mask_for_eval(
         self, mask: torch.BoolTensor, pos_tags: torch.LongTensor
-    ) -> torch.BoolTensor:
+    ) -> torch.Tensor:
         """
         Dependency evaluation excludes words are punctuation.
         Here, we create a new mask to exclude word indices which
@@ -489,7 +491,7 @@ class DependencyParser(Model):
         for label in self._pos_to_ignore:
             label_mask = pos_tags.eq(label)
             new_mask = new_mask & ~label_mask
-        return new_mask
+        return new_mask.bool()
 
     def training_step(self, batch, batch_idx):
         result = {}
@@ -533,38 +535,34 @@ class DependencyParser(Model):
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         return self.eval_helper(batch, "tst")
 
-    def prepare_data(self, split=Split.train):
+    def prepare_data(self):
         hparams = self.hparams
         if self.hparams.task == Task.parsing:
             data_class = ParsingDataset
         else:
             raise ValueError(f"Unsupported task: {hparams.task}")
 
-        if split == Split.train:
-            self.trn_datasets = self.prepare_datasets(
-                data_class,
-                hparams.trn_langs,
-                Split.train,
-                hparams.max_trn_len,
-                max_len_unit="subword",
-            )
-            self.val_datasets = self.prepare_datasets(
-                data_class,
-                hparams.val_langs,
-                Split.dev,
-                hparams.max_tst_len,
-                max_len_unit="word",
-            )
-        elif split == Split.test:
-            self.tst_datasets = self.prepare_datasets(
-                data_class,
-                hparams.tst_langs,
-                Split.test,
-                hparams.max_tst_len,
-                max_len_unit="word",
-            )
-        else:
-            raise ValueError(f"Unsupported split: {split}")
+        self.trn_datasets = self.prepare_datasets(
+            data_class,
+            hparams.trn_langs,
+            Split.train,
+            hparams.max_trn_len,
+            max_len_unit="subword",
+        )
+        self.val_datasets = self.prepare_datasets(
+            data_class,
+            hparams.val_langs,
+            Split.dev,
+            hparams.max_tst_len,
+            max_len_unit="word",
+        )
+        self.tst_datasets = self.prepare_datasets(
+            data_class,
+            hparams.tst_langs,
+            Split.test,
+            hparams.max_tst_len,
+            max_len_unit="word",
+        )
 
     @classmethod
     def add_model_specific_args(cls, parser):

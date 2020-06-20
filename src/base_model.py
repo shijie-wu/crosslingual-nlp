@@ -171,17 +171,24 @@ class Model(pl.LightningModule):
                 input_ids=sent, attention_mask=mask, token_type_ids=segment
             )
         elif isinstance(model, transformers.XLMModel):
+            lang_ids: Optional[torch.Tensor]
             if langs is not None:
                 try:
                     batch_size, seq_len = sent.shape
-                    langs = [self.tokenizer.lang2id[l] for l in langs]
-                    langs = torch.tensor(langs, dtype=torch.long, device=sent.device)
-                    langs = langs.unsqueeze(1).expand(batch_size, seq_len)
+                    lang_ids = torch.tensor(
+                        [self.tokenizer.lang2id[lang] for lang in langs],
+                        dtype=torch.long,
+                        device=sent.device,
+                    )
+                    lang_ids = lang_ids.unsqueeze(1).expand(batch_size, seq_len)
                 except KeyError as e:
                     print(f"KeyError with missing language {e}")
-                    langs = None
+                    lang_ids = None
             _, hidden_states = model(
-                input_ids=sent, attention_mask=mask, langs=langs, token_type_ids=segment
+                input_ids=sent,
+                attention_mask=mask,
+                langs=lang_ids,
+                token_type_ids=segment,
             )
         else:
             raise ValueError("Unsupported model")
@@ -367,7 +374,7 @@ class Model(pl.LightningModule):
                 print(f"load from cache {filepath} with {self.hparams.pretrain}")
                 dataset = torch.load(cache_file)
             else:
-                dataset = data_class(**params)
+                dataset = data_class(**params)  # type: ignore
                 if self.hparams.cache_dataset:
                     print(f"save to cache {filepath} with {self.hparams.pretrain}")
                     torch.save(dataset, cache_file)

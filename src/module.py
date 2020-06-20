@@ -82,8 +82,8 @@ class BilinearAttention(nn.Module):
             mat1_dim += 1
             mat2_dim += 1
 
-        self.weight = nn.Parameter(torch.Tensor(1, mat1_dim, mat2_dim))
-        self.bias = nn.Parameter(torch.Tensor(1))
+        self.weight = nn.Parameter(torch.zeros(1, mat1_dim, mat2_dim))
+        self.bias = nn.Parameter(torch.zeros(1))
         self._use_input_biases = use_input_biases
         self.reset_parameters()
 

@@ -1,5 +1,5 @@
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import torch
 from sklearn import metrics
@@ -57,7 +57,7 @@ class Metric(object):
     def add(self, gold, prediction):
         raise NotImplementedError
 
-    def get_metric(self) -> Dict[str, float]:
+    def get_metric(self) -> Dict[str, torch.Tensor]:
         raise NotImplementedError
 
     def reset(self):
@@ -173,7 +173,8 @@ class NERMetric(Metric):
     def add(self, gold, prediction):
         """
         gold is label
-        prediction is logits (batch_size, seq_len, num_labels) or prediction (batch_size, seq_len)
+        prediction is logits (batch_size, seq_len, num_labels) or prediction (batch_size,
+        seq_len)
         """
         gold, prediction = self.unpack(gold, prediction)
         if prediction.dim() > 2:
@@ -239,13 +240,13 @@ class ParsingMetric(Metric):
 
         self._ignore_classes: List[int] = ignore_classes or []
 
-    def add(
+    def add(  # type: ignore
         self,
         gold_indices: torch.Tensor,
         gold_labels: torch.Tensor,
         predicted_indices: torch.Tensor,
         predicted_labels: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor,
     ):
         """
         Parameters
@@ -258,7 +259,7 @@ class ParsingMetric(Metric):
             A tensor of the same shape as ``predicted_indices``.
         gold_labels : ``torch.Tensor``, required.
             A tensor of the same shape as ``predicted_labels``.
-        mask: ``torch.Tensor``, optional (default = None).
+        mask: ``torch.Tensor``, required.
             A tensor of the same shape as ``predicted_indices``.
         """
         unwrapped = self.unpack(

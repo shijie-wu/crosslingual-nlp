@@ -1,7 +1,7 @@
-'''
+"""
 Based on https://github.com/thespectrewithin/joint_align/blob/master/crf.py with better
 support of masking, allowing masking in the middle of a sentence.
-'''
+"""
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter

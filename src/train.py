@@ -1,14 +1,14 @@
 import os
 from argparse import ArgumentParser
+from typing import Optional
 
 import pytorch_lightning as pl
-import torch
 
 import util
 from base_model import Model
 from classifier import Classifier
 from dependency_parser import DependencyParser
-from enumeration import Split, Task
+from enumeration import Task
 from tagger import Tagger
 
 
@@ -76,7 +76,7 @@ def main(hparams):
         gradient_clip_val=hparams.gradient_clip_val,
         auto_select_gpus=True,
         gpus=hparams.gpus,
-        overfit_pct=hparams.overfit_pct,
+        overfit_batches=hparams.overfit_batches,
         track_grad_norm=hparams.track_grad_norm,
         check_val_every_n_epoch=hparams.check_val_every_n_epoch,
         fast_dev_run=hparams.fast_dev_run,
@@ -99,15 +99,14 @@ def main(hparams):
         trainer.fit(model)
 
     if hparams.do_test and hparams.tst_langs:
+        ckpt_path: Optional[str]
         if hparams.do_train:
             assert "select" not in trainer.callback_metrics
             trainer.callback_metrics["select"] = checkpoint_callback.best_model_score
-            trainer.model = model.load_from_checkpoint(
-                checkpoint_callback.best_model_path
-            )
-        trainer.model.prepare_data(Split.test)
-        trainer.model.to(trainer.root_gpu)
-        trainer.test()
+            ckpt_path = "best"
+        else:
+            ckpt_path = None
+        trainer.test(ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
@@ -125,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument("--default_save_path", default="./", type=str)
     parser.add_argument("--gradient_clip_val", default=0, type=float)
     parser.add_argument("--gpus", default=None, type=int)
-    parser.add_argument("--overfit_pct", default=0.0, type=float)
+    parser.add_argument("--overfit_batches", default=0.0, type=float)
     parser.add_argument("--track_grad_norm", default=-1, type=int)
     parser.add_argument("--check_val_every_n_epoch", default=1, type=int)
     parser.add_argument("--fast_dev_run", default=False, type=util.str2bool)
