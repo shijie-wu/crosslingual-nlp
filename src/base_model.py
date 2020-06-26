@@ -5,7 +5,7 @@ from argparse import ArgumentParser, Namespace
 from collections import defaultdict
 from copy import deepcopy
 from functools import partial
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Type
 
 import numpy as np
 import pytorch_lightning as pl
@@ -37,6 +37,7 @@ class Model(pl.LightningModule):
         self.padding: Dict[str, int] = {}
         self.base_dir: str = ""
 
+        self._batch_per_epoch: int = -1
         self._comparsion: Optional[str] = None
         self._selection_criterion: Optional[str] = None
 
@@ -46,14 +47,20 @@ class Model(pl.LightningModule):
         pl.seed_everything(hparams.seed)
 
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.pretrain)
-        config = AutoConfig.from_pretrained(hparams.pretrain, output_hidden_states=True)
-        self.model = AutoModel.from_pretrained(hparams.pretrain, config=config)
+        self.model = self.build_model()
         self.freeze_layers()
 
         self.weight = nn.Parameter(torch.zeros(self.num_layers))
 
         self.projector = self.build_projector()
         self.dropout = module.InputVariationalDropout(hparams.input_dropout)
+
+    def build_model(self):
+        config = AutoConfig.from_pretrained(
+            self.hparams.pretrain, output_hidden_states=True
+        )
+        model = AutoModel.from_pretrained(self.hparams.pretrain, config=config)
+        return model
 
     def freeze_layers(self):
         if self.hparams.freeze_layer == -1:
@@ -109,8 +116,14 @@ class Model(pl.LightningModule):
 
     @property
     def batch_per_epoch(self):
-        total_datasize = sum([len(d) for d in self.trn_datasets])
-        return np.ceil(total_datasize / self.hparams.batch_size)
+        if self.trn_datasets is None:
+            self.trn_datasets = self.prepare_datasets(Split.train)
+
+        if self._batch_per_epoch < 0:
+            total_datasize = sum([len(d) for d in self.trn_datasets])
+            self._batch_per_epoch = np.ceil(total_datasize / self.hparams.batch_size)
+
+        return self._batch_per_epoch
 
     @property
     def selection_criterion(self):
@@ -348,8 +361,16 @@ class Model(pl.LightningModule):
         md5 = md5_helper(list(signature.items()))
         return md5, signature
 
-    def prepare_datasets(
-        self, data_class: Dataset, langs: List[str], split: str, max_len: int, **kwargs,
+    def prepare_datasets(self, split: str) -> List[Dataset]:
+        raise NotImplementedError
+
+    def prepare_datasets_helper(
+        self,
+        data_class: Type[Dataset],
+        langs: List[str],
+        split: str,
+        max_len: int,
+        **kwargs,
     ):
         datasets = []
         for lang in langs:
@@ -374,7 +395,7 @@ class Model(pl.LightningModule):
                 print(f"load from cache {filepath} with {self.hparams.pretrain}")
                 dataset = torch.load(cache_file)
             else:
-                dataset = data_class(**params)  # type: ignore
+                dataset = data_class(**params)
                 if self.hparams.cache_dataset:
                     print(f"save to cache {filepath} with {self.hparams.pretrain}")
                     torch.save(dataset, cache_file)
@@ -384,6 +405,9 @@ class Model(pl.LightningModule):
         return datasets
 
     def train_dataloader(self):
+        if self.trn_datasets is None:
+            self.trn_datasets = self.prepare_datasets(Split.train)
+
         collate = partial(util.default_collate, padding=self.padding)
         if len(self.trn_datasets) == 1:
             dataset = self.trn_datasets[0]
@@ -406,6 +430,9 @@ class Model(pl.LightningModule):
         )
 
     def val_dataloader(self):
+        if self.val_datasets is None:
+            self.val_datasets = self.prepare_datasets(Split.dev)
+
         collate = partial(util.default_collate, padding=self.padding)
         return [
             DataLoader(
@@ -421,6 +448,9 @@ class Model(pl.LightningModule):
         ]
 
     def test_dataloader(self):
+        if self.tst_datasets is None:
+            self.tst_datasets = self.prepare_datasets(Split.test)
+
         collate = partial(util.default_collate, padding=self.padding)
         return [
             DataLoader(

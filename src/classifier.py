@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import List, Optional, Type
 
 import torch.nn as nn
 import torch.nn.functional as F
 
 from base_model import Model
-from dataset import LanguageID, MLDoc, PawsX, Xnli
+from dataset import Dataset, LanguageID, MLDoc, PawsX, Xnli
 from enumeration import Split, Task
 from metric import AccuracyMetric
 
@@ -97,8 +97,9 @@ class Classifier(Model):
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         return self.eval_helper(batch, "tst")
 
-    def prepare_data(self):
+    def prepare_datasets(self, split: str) -> List[Dataset]:
         hparams = self.hparams
+        data_class: Type[Dataset]
         if hparams.task == Task.xnli:
             data_class = Xnli
         elif hparams.task == Task.pawsx:
@@ -110,15 +111,20 @@ class Classifier(Model):
         else:
             raise ValueError(f"Unsupported task: {hparams.task}")
 
-        self.trn_datasets = self.prepare_datasets(
-            data_class, hparams.trn_langs, Split.train, hparams.max_trn_len
-        )
-        self.val_datasets = self.prepare_datasets(
-            data_class, hparams.val_langs, Split.dev, hparams.max_tst_len
-        )
-        self.tst_datasets = self.prepare_datasets(
-            data_class, hparams.tst_langs, Split.test, hparams.max_tst_len
-        )
+        if split == Split.train:
+            return self.prepare_datasets_helper(
+                data_class, hparams.trn_langs, Split.train, hparams.max_trn_len
+            )
+        elif split == Split.dev:
+            return self.prepare_datasets_helper(
+                data_class, hparams.val_langs, Split.dev, hparams.max_tst_len
+            )
+        elif split == Split.test:
+            return self.prepare_datasets_helper(
+                data_class, hparams.tst_langs, Split.test, hparams.max_tst_len
+            )
+        else:
+            raise ValueError(f"Unsupported split: {hparams.split}")
 
     @classmethod
     def add_model_specific_args(cls, parser):
