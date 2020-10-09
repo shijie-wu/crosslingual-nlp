@@ -70,15 +70,11 @@ class Classifier(Model):
         return loss, log_probs
 
     def training_step(self, batch, batch_idx):
-        result = {}
-        loss, log_probs = self.forward(batch)
-        result["loss"] = loss
-        return {
-            "loss": result["loss"],
-            "log": result,
-        }
+        loss, _ = self.forward(batch)
+        self.log("loss", loss)
+        return loss
 
-    def eval_helper(self, batch, prefix):
+    def evaluation_step_helper(self, batch, prefix):
         loss, log_probs = self.forward(batch)
 
         assert (
@@ -90,12 +86,6 @@ class Classifier(Model):
         result = dict()
         result[f"{prefix}_{lang}_loss"] = loss
         return result
-
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        return self.eval_helper(batch, "val")
-
-    def test_step(self, batch, batch_idx, dataloader_idx=0):
-        return self.eval_helper(batch, "tst")
 
     def prepare_datasets(self, split: str) -> List[Dataset]:
         hparams = self.hparams

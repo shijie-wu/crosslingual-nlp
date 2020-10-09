@@ -494,15 +494,11 @@ class DependencyParser(Model):
         return new_mask.bool()
 
     def training_step(self, batch, batch_idx):
-        result = {}
         loss, _, _, _ = self.forward(batch)
-        result["loss"] = loss
-        return {
-            "loss": result["loss"],
-            "log": result,
-        }
+        self.log("loss", loss)
+        return loss
 
-    def eval_helper(self, batch, prefix):
+    def evaluation_step_helper(self, batch, prefix):
         loss, head_tag, child_tag, score_arc = self.forward(batch)
         lengths = self.get_mask(batch["sent"]).long().sum(dim=1).cpu().numpy()
         predicted_heads, predicted_labels = self._mst_decode(
@@ -528,12 +524,6 @@ class DependencyParser(Model):
         result = dict()
         result[f"{prefix}_{lang}_loss"] = loss
         return result
-
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        return self.eval_helper(batch, "val")
-
-    def test_step(self, batch, batch_idx, dataloader_idx=0):
-        return self.eval_helper(batch, "tst")
 
     def prepare_datasets(self, split: str) -> List[Dataset]:
         hparams = self.hparams

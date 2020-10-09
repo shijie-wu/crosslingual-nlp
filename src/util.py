@@ -2,9 +2,11 @@ import argparse
 import json
 import os
 import re
+from typing import Dict
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_lightning.callbacks.base import Callback
 from torch._six import container_abcs, int_classes, string_classes
@@ -59,6 +61,47 @@ class Logging(Callback):
                     logs[k] = v
             # assert "select" in logs
             print(json.dumps(logs), file=fp)
+
+
+class MappingCheckpoint(Callback):
+    def __init__(self, save_dir: str):
+        super().__init__()
+        self.filename = os.path.join(save_dir, "mapping.pth")
+        self.mappings = nn.ModuleList([])
+        self.mappings_best: Dict[str, float] = dict()
+
+    def on_train_start(self, trainer, pl_module):
+        """Called when the train begins."""
+        if (
+            pl_module.hparams.task == "alignment"
+            and pl_module.hparams.aligner_sim == "linear"
+        ):
+            for _ in range(pl_module.num_layers):
+                m = nn.Linear(pl_module.hidden_size, pl_module.hidden_size, bias=False)
+                self.mappings.append(m)
+
+    def on_validation_end(self, trainer, pl_module):
+        """Called when the validation loop ends."""
+        if (
+            pl_module.hparams.task == "alignment"
+            and pl_module.hparams.aligner_sim == "linear"
+        ):
+            metrics = trainer.callback_metrics
+            new_best_mappings = []
+            for i, mapping in enumerate(pl_module.mappings):
+                key = f"val_layer{i}_loss"
+                if key not in self.mappings_best or (
+                    self.mappings_best[key] > metrics[key]
+                ):
+                    new_best_mappings.append(i)
+                    self.mappings_best[key] = metrics[key]
+                    self.mappings[i].load_state_dict(mapping.state_dict())
+
+            if new_best_mappings:
+                print(
+                    f"found new best mappings at {new_best_mappings} in step {trainer.global_step}"
+                )
+                torch.save(self.mappings, self.filename)
 
 
 def freeze(module):

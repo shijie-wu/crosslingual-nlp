@@ -1,10 +1,10 @@
 import os
 from argparse import ArgumentParser
-from typing import Optional
 
 import pytorch_lightning as pl
 
 import util
+from aligner import Aligner
 from base_model import Model
 from classifier import Classifier
 from dependency_parser import DependencyParser
@@ -27,6 +27,7 @@ def main(hparams):
         Task.mldoc: Classifier,
         Task.langid: Classifier,
         Task.parsing: DependencyParser,
+        Task.alignment: Aligner,
     }[hparams.task](hparams)
 
     os.makedirs(
@@ -61,25 +62,29 @@ def main(hparams):
         save_last=hparams.save_last,
         save_top_k=hparams.save_top_k,
         mode=model.comparsion,
-        period=0,
         prefix="",
     )
     logging_callback = util.Logging(base_dir)
-    lr_logger = pl.callbacks.LearningRateLogger()
+    lr_logger = pl.callbacks.LearningRateMonitor()
+    callbacks = [logging_callback, lr_logger]
+    if isinstance(model, Aligner) and hparams.aligner_sim == "linear":
+        callbacks.append(util.MappingCheckpoint(base_dir))
 
     trainer = pl.Trainer(
         logger=logger,
         early_stop_callback=early_stopping,
         checkpoint_callback=checkpoint_callback,
-        callbacks=[logging_callback, lr_logger],
+        callbacks=callbacks,
         default_root_dir=hparams.default_save_path,
         gradient_clip_val=hparams.gradient_clip_val,
-        auto_select_gpus=True,
+        num_nodes=hparams.num_nodes,
         gpus=hparams.gpus,
+        auto_select_gpus=True,
         overfit_batches=hparams.overfit_batches,
         track_grad_norm=hparams.track_grad_norm,
         check_val_every_n_epoch=hparams.check_val_every_n_epoch,
         fast_dev_run=hparams.fast_dev_run,
+        accumulate_grad_batches=hparams.accumulate_grad_batches,
         max_epochs=hparams.max_epochs,
         min_epochs=hparams.min_epochs,
         max_steps=hparams.max_steps,
@@ -87,26 +92,25 @@ def main(hparams):
         val_check_interval=int(hparams.val_check_interval)
         if hparams.val_check_interval > 1
         else hparams.val_check_interval,
+        log_every_n_steps=hparams.log_every_n_steps,
+        distributed_backend=hparams.distributed_backend,
         precision=hparams.precision,
         resume_from_checkpoint=hparams.resume_from_checkpoint,
-        terminate_on_nan=True,
         replace_sampler_ddp=True,
-        accumulate_grad_batches=hparams.accumulate_grad_batches,
-        num_nodes=hparams.num_nodes,
-        distributed_backend=hparams.distributed_backend,
+        terminate_on_nan=True,
+        amp_backend="apex",
+        amp_level="O1",
     )
     if hparams.do_train:
         trainer.fit(model)
 
     if hparams.do_test and hparams.tst_langs:
-        ckpt_path: Optional[str]
         if hparams.do_train:
             assert "select" not in trainer.callback_metrics
             trainer.callback_metrics["select"] = checkpoint_callback.best_model_score
-            ckpt_path = "best"
+            trainer.test(ckpt_path="best")
         else:
-            ckpt_path = None
-        trainer.test(ckpt_path=ckpt_path)
+            trainer.test(model=model)
 
 
 if __name__ == "__main__":
@@ -123,25 +127,27 @@ if __name__ == "__main__":
     ############################################################################
     parser.add_argument("--default_save_path", default="./", type=str)
     parser.add_argument("--gradient_clip_val", default=0, type=float)
+    parser.add_argument("--num_nodes", default=1, type=int)
     parser.add_argument("--gpus", default=None, type=int)
     parser.add_argument("--overfit_batches", default=0.0, type=float)
     parser.add_argument("--track_grad_norm", default=-1, type=int)
     parser.add_argument("--check_val_every_n_epoch", default=1, type=int)
     parser.add_argument("--fast_dev_run", default=False, type=util.str2bool)
+    parser.add_argument("--accumulate_grad_batches", default=1, type=int)
     parser.add_argument("--max_epochs", default=1000, type=int)
     parser.add_argument("--min_epochs", default=1, type=int)
     parser.add_argument("--max_steps", default=None, type=int)
     parser.add_argument("--min_steps", default=None, type=int)
     parser.add_argument("--val_check_interval", default=1.0, type=float)
+    parser.add_argument("--log_every_n_steps", default=10, type=int)
+    parser.add_argument("--distributed_backend", default=None, type=str)
     parser.add_argument("--precision", default=32, type=int)
     parser.add_argument("--resume_from_checkpoint", default=None, type=str)
-    parser.add_argument("--accumulate_grad_batches", default=1, type=int)
-    parser.add_argument("--num_nodes", default=1, type=int)
-    parser.add_argument("--distributed_backend", default=None, type=str)
     ############################################################################
     parser = Model.add_model_specific_args(parser)
     parser = Tagger.add_model_specific_args(parser)
     parser = Classifier.add_model_specific_args(parser)
     parser = DependencyParser.add_model_specific_args(parser)
+    parser = Aligner.add_model_specific_args(parser)
     hparams = parser.parse_args()
     main(hparams)

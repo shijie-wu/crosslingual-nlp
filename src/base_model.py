@@ -17,6 +17,7 @@ from torch import Tensor
 from torch.utils.data import ConcatDataset, DataLoader, RandomSampler
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
+import constant
 import module
 import util
 from dataset import Dataset
@@ -43,7 +44,7 @@ class Model(pl.LightningModule):
 
         if isinstance(hparams, dict):
             hparams = Namespace(**hparams)
-        self.hparams = hparams
+        self.hparams: Namespace = hparams
         pl.seed_everything(hparams.seed)
 
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.pretrain)
@@ -51,6 +52,11 @@ class Model(pl.LightningModule):
         self.freeze_layers()
 
         self.weight = nn.Parameter(torch.zeros(self.num_layers))
+        self.mapping = None
+        if hparams.mapping:
+            assert os.path.isfile(hparams.mapping)
+            self.mapping = torch.load(hparams.mapping)
+            util.freeze(self.mapping)
 
         self.projector = self.build_projector()
         self.dropout = module.InputVariationalDropout(hparams.input_dropout)
@@ -75,7 +81,9 @@ class Model(pl.LightningModule):
                     self.freeze_layer(i)
 
     def freeze_embeddings(self):
-        if isinstance(self.model, transformers.BertModel):
+        if isinstance(self.model, transformers.BertModel) or isinstance(
+            self.model, transformers.RobertaModel
+        ):
             util.freeze(self.model.embeddings)
         elif isinstance(self.model, transformers.XLMModel):
             util.freeze(self.model.position_embeddings)
@@ -86,7 +94,9 @@ class Model(pl.LightningModule):
             raise ValueError("Unsupported model")
 
     def freeze_layer(self, layer):
-        if isinstance(self.model, transformers.BertModel):
+        if isinstance(self.model, transformers.BertModel) or isinstance(
+            self.model, transformers.RobertaModel
+        ):
             util.freeze(self.model.encoder.layer[layer - 1])
         elif isinstance(self.model, transformers.XLMModel):
             util.freeze(self.model.attentions[layer - 1])
@@ -98,7 +108,9 @@ class Model(pl.LightningModule):
 
     @property
     def hidden_size(self):
-        if isinstance(self.model, transformers.BertModel):
+        if isinstance(self.model, transformers.BertModel) or isinstance(
+            self.model, transformers.RobertaModel
+        ):
             return self.model.config.hidden_size
         elif isinstance(self.model, transformers.XLMModel):
             return self.model.dim
@@ -107,7 +119,9 @@ class Model(pl.LightningModule):
 
     @property
     def num_layers(self):
-        if isinstance(self.model, transformers.BertModel):
+        if isinstance(self.model, transformers.BertModel) or isinstance(
+            self.model, transformers.RobertaModel
+        ):
             return self.model.config.num_hidden_layers + 1
         elif isinstance(self.model, transformers.XLMModel):
             return self.model.n_layers + 1
@@ -179,7 +193,9 @@ class Model(pl.LightningModule):
         if model is None:
             model = self.model
         mask = self.get_mask(sent)
-        if isinstance(model, transformers.BertModel):
+        if isinstance(model, transformers.BertModel) or isinstance(
+            self.model, transformers.RobertaModel
+        ):
             _, _, hidden_states = model(
                 input_ids=sent, attention_mask=mask, token_type_ids=segment
             )
@@ -210,13 +226,25 @@ class Model(pl.LightningModule):
             return hidden_states
 
         hs = self.map_feature(hidden_states, langs)
-        hs = self.process_feature(hidden_states)
+        hs = self.process_feature(hs)
         hs = self.dropout(hs)
         hs = self.projector(hs, mask)
         return hs
 
     def map_feature(self, hidden_states: List[Tensor], langs):
-        return hidden_states
+        if self.mapping is None:
+            return hidden_states
+
+        assert len(set(langs)) == 1, "a batch should contain only one language"
+        lang = langs[0]
+        lang = constant.LANGUAGE_TO_ISO639.get(lang, lang)
+        if lang not in self.mapping:
+            return hidden_states
+
+        hs = []
+        for h, m in zip(hidden_states, self.mapping[lang]):
+            hs.append(m(h))
+        return hs
 
     def process_feature(self, hidden_states: List[Tensor]):
         if self.hparams.weighted_feature:
@@ -228,49 +256,59 @@ class Model(pl.LightningModule):
             hs = hidden_states[self.hparams.feature_layer]
         return hs
 
-    def training_epoch_end(self, outputs):
-        return {}
+    def evaluation_step_helper(self, batch, prefix) -> Dict[str, Tensor]:
+        raise NotImplementedError
 
-    def aggregate_outputs(self, outputs, langs: List[str], prefix: str):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        return self.evaluation_step_helper(batch, "val")
+
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
+        return self.evaluation_step_helper(batch, "tst")
+
+    def training_epoch_end(self, outputs):
+        return
+
+    def aggregate_outputs(
+        self, outputs: List[List[Dict[str, Tensor]]], langs: List[str], prefix: str
+    ):
         assert prefix in ["val", "tst"]
-        result: Dict[str, Tensor] = {}
         aver_result = defaultdict(list)
         for lang, output in zip(langs, outputs):
             for key in output[0]:
                 mean_val = torch.stack([x[key] for x in output]).mean()
-                result[key] = mean_val
+                self.log(key, mean_val)
 
                 raw_key = key.replace(f"{lang}_", "")
                 aver_result[raw_key].append(mean_val)
 
         for key, vals in aver_result.items():
-            result[key] = torch.stack(vals).mean()
+            self.log(key, torch.stack(vals).mean())
 
+    def aggregate_metrics(self, langs: List[str], prefix: str):
         aver_metric = defaultdict(list)
-        for lang, metric in self.metrics.items():
+        for lang in langs:
+            metric = self.metrics[lang]
             for key, val in metric.get_metric().items():
-                result[f"{prefix}_{lang}_{key}"] = val
+                self.log(f"{prefix}_{lang}_{key}", val)
 
                 aver_metric[key].append(val)
 
         for key, vals in aver_metric.items():
-            result[f"{prefix}_{key}"] = torch.stack(vals).mean()
-
-        return {
-            f"{prefix}_loss": result[f"{prefix}_loss"],
-            "log": result,
-            "progress_bar": result,
-        }
+            self.log(f"{prefix}_{key}", torch.stack(vals).mean())
 
     def validation_epoch_end(self, outputs):
         if len(self.hparams.val_langs) == 1:
             outputs = [outputs]
-        return self.aggregate_outputs(outputs, self.hparams.val_langs, "val")
+        self.aggregate_outputs(outputs, self.hparams.val_langs, "val")
+        self.aggregate_metrics(self.hparams.val_langs, "val")
+        return
 
     def test_epoch_end(self, outputs):
         if len(self.hparams.tst_langs) == 1:
             outputs = [outputs]
-        return self.aggregate_outputs(outputs, self.hparams.tst_langs, "tst")
+        self.aggregate_outputs(outputs, self.hparams.tst_langs, "tst")
+        self.aggregate_metrics(self.hparams.tst_langs, "tst")
+        return
 
     def get_warmup_and_total_steps(self):
         if self.hparams.max_steps is not None:
@@ -376,9 +414,10 @@ class Model(pl.LightningModule):
         for lang in langs:
             filepath = data_class.get_file(self.hparams.data_dir, lang, split)
             if filepath is None:
-                print("skipping {split} language: {lang}")
+                print(f"skipping {split} language: {lang}")
                 continue
             params = {}
+            params["task"] = self.hparams.task
             params["tokenizer"] = self.tokenizer
             params["filepath"] = filepath
             params["lang"] = lang
@@ -390,6 +429,7 @@ class Model(pl.LightningModule):
                 params["subset_seed"] = self.hparams.subset_seed
             params.update(kwargs)
             md5, signature = self._get_signature(params)
+            del params["task"]
             cache_file = f"{self.hparams.cache_path}/{md5}"
             if self.hparams.cache_dataset and os.path.isfile(cache_file):
                 print(f"load from cache {filepath} with {self.hparams.pretrain}")
@@ -492,6 +532,7 @@ class Model(pl.LightningModule):
         parser.add_argument("--projector_trm_num_layers", default=4, type=int)
         parser.add_argument("--projector_dropout", default=0.2, type=float)
         parser.add_argument("--input_dropout", default=0.2, type=float)
+        parser.add_argument("--mapping", default="", type=str)
         # misc
         parser.add_argument("--seed", default=42, type=int)
         parser.add_argument("--learning_rate", default=5e-5, type=float)

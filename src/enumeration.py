@@ -24,6 +24,7 @@ class Task(Enum):
     wikiner: str = "ner-wiki"
     udpos: str = "udpos"
     parsing: str = "parsing"
+    alignment: str = "alignment"
 
 
 @dataclass

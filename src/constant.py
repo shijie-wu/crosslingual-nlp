@@ -1,10 +1,25 @@
+LANGUAGE_TO_ISO639 = {
+    # NER
+    "zh-word": "zh",
+    # Universal Dependency
+    "Arabic-PADT": "ar",
+    "German-GSD": "de",
+    "English-EWT": "en",
+    "Spanish-GSD": "es",
+    "French-GSD": "fr",
+    "Hindi-HDTB": "hi",
+    "Russian-GSD": "ru",
+    "Vietnamese-VTB": "vi",
+    "Chinese-GSD": "zh",
+}
+
 UD_POS_LABELS = [
     "_",
     "ADJ",
     "ADP",
     "ADV",
     "AUX",
-    "CCONJ",
+    "CCONJ",  # older version of UD use CONJ
     "DET",
     "INTJ",
     "NOUN",
