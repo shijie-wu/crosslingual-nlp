@@ -44,7 +44,8 @@ class Model(pl.LightningModule):
 
         if isinstance(hparams, dict):
             hparams = Namespace(**hparams)
-        self.hparams: Namespace = hparams
+        # self.hparams: Namespace = hparams
+        self.save_hyperparameters(hparams)
         pl.seed_everything(hparams.seed)
 
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.pretrain)
@@ -196,9 +197,7 @@ class Model(pl.LightningModule):
         if isinstance(model, transformers.BertModel) or isinstance(
             self.model, transformers.RobertaModel
         ):
-            _, _, hidden_states = model(
-                input_ids=sent, attention_mask=mask, token_type_ids=segment
-            )
+            output = model(input_ids=sent, attention_mask=mask, token_type_ids=segment)
         elif isinstance(model, transformers.XLMModel):
             lang_ids: Optional[torch.Tensor]
             if langs is not None:
@@ -213,7 +212,7 @@ class Model(pl.LightningModule):
                 except KeyError as e:
                     print(f"KeyError with missing language {e}")
                     lang_ids = None
-            _, hidden_states = model(
+            output = model(
                 input_ids=sent,
                 attention_mask=mask,
                 langs=lang_ids,
@@ -223,9 +222,9 @@ class Model(pl.LightningModule):
             raise ValueError("Unsupported model")
 
         if return_raw_hidden_states:
-            return hidden_states
+            return output["hidden_states"]
 
-        hs = self.map_feature(hidden_states, langs)
+        hs = self.map_feature(output["hidden_states"], langs)
         hs = self.process_feature(hs)
         hs = self.dropout(hs)
         hs = self.projector(hs, mask)

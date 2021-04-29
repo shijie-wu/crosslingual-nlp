@@ -48,8 +48,10 @@ class Dataset(TorchDataset):
         self.lang = self.unpack_language(lang)
         self.split = split
         if max_len is not None:
-            assert 0 < max_len <= self.tokenizer.max_len
-        self.max_len = max_len if max_len is not None else self.tokenizer.max_len
+            assert 0 < max_len <= self.tokenizer.max_len_single_sentence
+        self.max_len = (
+            max_len if max_len is not None else self.tokenizer.max_len_single_sentence
+        )
         self.data: List[Dict[str, np.ndarray]] = []
 
         assert 0 < subset_ratio <= 1
@@ -504,7 +506,10 @@ class UdPOS(TaggingDataset):
 
 class ParsingDataset(Dataset):
     def __init__(
-        self, *, max_len_unit: str, **kwargs,
+        self,
+        *,
+        max_len_unit: str,
+        **kwargs,
     ):
         assert max_len_unit in ["word", "subword"]
         self.max_len_unit = max_len_unit

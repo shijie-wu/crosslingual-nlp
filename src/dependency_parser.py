@@ -386,7 +386,8 @@ class DependencyParser(Model):
 
     @staticmethod
     def _run_mst_decoding(
-        batch_energy: torch.Tensor, lengths: np.ndarray,
+        batch_energy: torch.Tensor,
+        lengths: np.ndarray,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         heads = []
         head_tags = []

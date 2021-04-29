@@ -18,7 +18,7 @@ def main(hparams):
             hparams.cache_path = os.path.join(os.path.expanduser("~"), ".cache/clnlp")
         os.makedirs(hparams.cache_path, exist_ok=True)
 
-    model = {
+    ModelClass = {
         Task.conllner: Tagger,
         Task.wikiner: Tagger,
         Task.udpos: Tagger,
@@ -28,7 +28,12 @@ def main(hparams):
         Task.langid: Classifier,
         Task.parsing: DependencyParser,
         Task.alignment: Aligner,
-    }[hparams.task](hparams)
+    }[hparams.task]
+    if hparams.do_train:
+        model = ModelClass(hparams)
+    else:
+        assert os.path.isfile(hparams.checkpoint)
+        model = ModelClass.load_from_checkpoint(hparams.checkpoint)
 
     os.makedirs(
         os.path.join(hparams.default_save_path, hparams.exp_name), exist_ok=True
@@ -52,28 +57,23 @@ def main(hparams):
         f"version_{logger.version}" if logger.version is not None else "",
     )
     model.base_dir = base_dir
-    filepath = os.path.join(
-        base_dir, "ckpts", "ckpts_{epoch}-{%s:.3f}" % model.selection_criterion,
-    )
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        filepath=filepath,
+        dirpath=os.path.join(base_dir, "ckpts"),
+        filename="ckpts_{epoch}-{%s:.3f}" % model.selection_criterion,
         monitor=model.selection_criterion,
         verbose=True,
         save_last=hparams.save_last,
         save_top_k=hparams.save_top_k,
         mode=model.comparsion,
-        prefix="",
     )
     logging_callback = util.Logging(base_dir)
     lr_logger = pl.callbacks.LearningRateMonitor()
-    callbacks = [logging_callback, lr_logger]
+    callbacks = [early_stopping, checkpoint_callback, logging_callback, lr_logger]
     if isinstance(model, Aligner) and hparams.aligner_sim == "linear":
         callbacks.append(util.MappingCheckpoint(base_dir))
 
     trainer = pl.Trainer(
         logger=logger,
-        early_stop_callback=early_stopping,
-        checkpoint_callback=checkpoint_callback,
         callbacks=callbacks,
         default_root_dir=hparams.default_save_path,
         gradient_clip_val=hparams.gradient_clip_val,
@@ -93,13 +93,13 @@ def main(hparams):
         if hparams.val_check_interval > 1
         else hparams.val_check_interval,
         log_every_n_steps=hparams.log_every_n_steps,
-        distributed_backend=hparams.distributed_backend,
+        accelerator=hparams.accelerator,
         precision=hparams.precision,
         resume_from_checkpoint=hparams.resume_from_checkpoint,
         replace_sampler_ddp=True,
         terminate_on_nan=True,
-        amp_backend="apex",
-        amp_level="O1",
+        amp_backend=hparams.amp_backend,
+        amp_level=hparams.amp_level,
     )
     if hparams.do_train:
         trainer.fit(model)
@@ -122,6 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_top_k", default=1, type=int)
     parser.add_argument("--do_train", default=True, type=util.str2bool)
     parser.add_argument("--do_test", default=True, type=util.str2bool)
+    parser.add_argument("--checkpoint", default="", type=str)
     parser.add_argument("--cache_dataset", default=False, type=util.str2bool)
     parser.add_argument("--cache_path", default="", type=str)
     ############################################################################
@@ -140,9 +141,12 @@ if __name__ == "__main__":
     parser.add_argument("--min_steps", default=None, type=int)
     parser.add_argument("--val_check_interval", default=1.0, type=float)
     parser.add_argument("--log_every_n_steps", default=10, type=int)
-    parser.add_argument("--distributed_backend", default=None, type=str)
+    parser.add_argument("--accelerator", default=None, type=str)
     parser.add_argument("--precision", default=32, type=int)
     parser.add_argument("--resume_from_checkpoint", default=None, type=str)
+    parser.add_argument("--amp_backend", default="native", type=str)
+    # only used for non-native amp
+    parser.add_argument("--amp_level", default="01", type=str)
     ############################################################################
     parser = Model.add_model_specific_args(parser)
     parser = Tagger.add_model_specific_args(parser)
