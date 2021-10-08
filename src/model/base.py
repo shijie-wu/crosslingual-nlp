@@ -18,11 +18,11 @@ from torch.utils.data import ConcatDataset, DataLoader, RandomSampler
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 import constant
-import module
 import util
-from dataset import Dataset
+from dataset.base import Dataset
 from enumeration import Schedule, Split, Task
 from metric import Metric
+from model.module import Identity, InputVariationalDropout, MeanPooling, Transformer
 
 
 class Model(pl.LightningModule):
@@ -60,7 +60,7 @@ class Model(pl.LightningModule):
             util.freeze(self.mapping)
 
         self.projector = self.build_projector()
-        self.dropout = module.InputVariationalDropout(hparams.input_dropout)
+        self.dropout = InputVariationalDropout(hparams.input_dropout)
 
     def build_model(self):
         config = AutoConfig.from_pretrained(
@@ -165,11 +165,11 @@ class Model(pl.LightningModule):
     def build_projector(self):
         hparams = self.hparams
         if hparams.projector == "id":
-            return module.Identity()
+            return Identity()
         elif hparams.projector == "meanpool":
-            return module.MeanPooling()
+            return MeanPooling()
         elif hparams.projector == "transformer":
-            return module.Transformer(
+            return Transformer(
                 input_dim=self.hidden_size,
                 hidden_dim=hparams.projector_trm_hidden_size,
                 num_heads=hparams.projector_trm_num_heads,

@@ -4,7 +4,7 @@ from typing import Dict, List
 import torch
 from sklearn import metrics
 
-from dataset import LABEL_PAD_ID
+LABEL_PAD_ID = -1
 
 
 def convert_bio_to_spans(bio_sequence):

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from fire import Fire
 
 
@@ -46,6 +47,9 @@ class Main:
         tst.update(val[i])
         tst["select_criterion"] = k
         tst["model"] = str(Path(file).parent)
+        with open(Path(file).parent / "hparams.yaml") as fp:
+            hparams = yaml.load(fp, Loader=yaml.FullLoader)
+            tst["seed"] = hparams["seed"]
         tst = {k: v for k, v in tst.items() if "loss" not in k}
         tst = {k: v for k, v in tst.items() if "lem" not in k}
         tst = {k: v for k, v in tst.items() if "uem" not in k}

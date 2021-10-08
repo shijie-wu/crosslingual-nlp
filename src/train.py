@@ -4,12 +4,8 @@ from argparse import ArgumentParser
 import pytorch_lightning as pl
 
 import util
-from aligner import Aligner
-from base_model import Model
-from classifier import Classifier
-from dependency_parser import DependencyParser
 from enumeration import Task
-from tagger import Tagger
+from model import Aligner, Classifier, DependencyParser, Model, Tagger
 
 
 def main(hparams):

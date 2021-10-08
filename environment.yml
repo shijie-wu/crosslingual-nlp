@@ -14,13 +14,15 @@ dependencies:
   - backcall=0.2.0=pyh9f0ad1d_0
   - backports=1.0=py_2
   - backports.functools_lru_cache=1.6.4=pyhd8ed1ab_0
+  - beautifulsoup4=4.10.0=pyh06a4308_0
   - blas=1.0=mkl
   - blinker=1.4=py_1
   - brotlipy=0.7.0=py39h3811e60_1001
+  - bs4=4.10.0=hd3eb1b0_0
   - c-ares=1.17.1=h7f98852_1
-  - ca-certificates=2020.12.5=ha878542_0
+  - ca-certificates=2021.7.5=h06a4308_1
   - cachetools=4.2.2=pyhd8ed1ab_0
-  - certifi=2020.12.5=py39hf3d152e_1
+  - certifi=2021.5.30=py39h06a4308_0
   - cffi=1.14.5=py39he32792d_0
   - cfgv=3.2.0=py_0
   - chardet=4.0.0=py39hf3d152e_1
@@ -45,7 +47,9 @@ dependencies:
   - ipython=7.22.0=py39hef51801_0
   - ipython_genutils=0.2.0=py_1
   - jedi=0.18.0=py39hf3d152e_2
+  - jieba=0.42.1=pyhd8ed1ab_0
   - joblib=1.0.1=pyhd8ed1ab_0
+  - jsonlines=2.0.0=pyhd3eb1b0_2
   - ld_impl_linux-64=2.35.1=hea4e1c9_2
   - libblas=3.9.0=1_h86c2bf4_netlib
   - libcblas=3.9.0=5_h92ddd45_netlib
@@ -71,8 +75,9 @@ dependencies:
   - numpy=1.20.1=py39h93e21f0_0
   - numpy-base=1.20.1=py39h7d8b39e_0
   - oauthlib=3.0.1=py_0
-  - openssl=1.1.1k=h7f98852_0
+  - openssl=1.1.1l=h7f8727e_0
   - packaging=20.9=pyh44b312d_0
+  - pandas=1.2.4=py39hde0f152_0
   - parso=0.8.2=pyhd8ed1ab_0
   - pexpect=4.8.0=pyh9f0ad1d_2
   - pickleshare=0.7.5=py_1003
@@ -90,9 +95,11 @@ dependencies:
   - pyparsing=2.4.7=pyh9f0ad1d_0
   - pysocks=1.7.1=py39hf3d152e_3
   - python=3.9.2=hffdb5ce_0_cpython
+  - python-dateutil=2.8.1=py_0
   - python_abi=3.9=1_cp39
   - pytorch=1.8.1=py3.9_cuda11.1_cudnn8.0.5_0
   - pytorch-lightning=1.2.10=pyhd8ed1ab_0
+  - pytz=2021.1=pyhd8ed1ab_0
   - pyyaml=5.4.1=py39h3811e60_0
   - readline=8.1=h46c0cb4_0
   - regex=2021.4.4=py39h3811e60_0
@@ -105,9 +112,11 @@ dependencies:
   - sentencepiece=0.1.95=py39h1a9c180_0
   - setuptools=49.6.0=py39hf3d152e_3
   - six=1.15.0=pyh9f0ad1d_0
+  - soupsieve=2.2.1=pyhd3eb1b0_0
   - sqlite=3.35.5=h74cdb3f_0
   - tbb=2021.2.0=h4bd325d_0
-  - tensorboard=2.4.1=pyhd8ed1ab_0
+  - tensorboard=2.6.0=py_1
+  - tensorboard-data-server=0.6.0=py39hca6d32c_0
   - tensorboard-plugin-wit=1.8.0=pyh44b312d_0
   - termcolor=1.1.0=py_2
   - threadpoolctl=2.1.0=pyh5ca1d4c_0

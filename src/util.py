@@ -206,6 +206,8 @@ def default_collate(batch, padding):
             *(default_collate(samples, padding) for samples in zip(*batch))
         )
     elif isinstance(elem, container_abcs.Sequence):
+        if isinstance(elem[0], string_classes):
+            return batch
         transposed = zip(*batch)
         return [default_collate(samples, padding) for samples in transposed]
 

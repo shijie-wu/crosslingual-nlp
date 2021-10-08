@@ -3,10 +3,10 @@ from typing import List, Optional, Type
 import torch.nn as nn
 import torch.nn.functional as F
 
-from base_model import Model
 from dataset import Dataset, LanguageID, MLDoc, PawsX, Xnli
 from enumeration import Split, Task
 from metric import AccuracyMetric
+from model.base import Model
 
 
 class Classifier(Model):
