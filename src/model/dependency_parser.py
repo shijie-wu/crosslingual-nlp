@@ -5,12 +5,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from base_model import Model
-from chu_liu_edmonds import decode_mst
 from dataset import LABEL_PAD_ID, Dataset, ParsingDataset
 from enumeration import Split, Task
 from metric import ParsingMetric
-from module import BilinearAttention, InputVariationalDropout
+from model.base import Model
+from model.chu_liu_edmonds import decode_mst
+from model.module import BilinearAttention, InputVariationalDropout
 from util import masked_log_softmax, str2bool
 
 POS_TO_IGNORE = {"``", "''", ":", ",", ".", "PU", "PUNCT", "SYM"}
@@ -29,6 +29,8 @@ class DependencyParser(Model):
             self.hparams.task
         ]
         self._metric = {Task.parsing: ParsingMetric()}[self.hparams.task]
+
+        self.id2label = ParsingDataset.get_labels()
 
         encode_dim = self.hidden_size
         hparams = self.hparams
@@ -118,6 +120,71 @@ class DependencyParser(Model):
         batch["first_subword_mask"] = batch["heads"] != -1
         batch["heads"] = batch["heads"].masked_fill(batch["heads"] >= seq_len, -1)
         return batch
+
+    def predict(self, batch):
+        sent = batch["sent"]
+        lang = batch["lang"]
+        first_subword_mask = batch["first_subword_mask"]
+
+        hs = self.encode_sent(sent, lang)
+        log_probs = None
+        if self.hparams.parser_predict_pos:
+            logits = self.pos_tagger(hs)
+            log_probs = F.log_softmax(logits, dim=-1)
+
+        assert not self.hparams.parser_use_pos
+
+        if self.hparams.parser_use_predict_pos:
+            assert log_probs is not None
+            hs_pos = F.linear(log_probs.exp().detach(), self.pos_embed.weight.t())
+            hs = torch.cat((hs, hs_pos), dim=-1)
+
+        head_arc = self.head_arc_ff(hs)
+        child_arc = self.child_arc_ff(hs)
+        score_arc = self.arc_attention(head_arc, child_arc)
+
+        head_tag = self.head_tag_ff(hs)
+        child_tag = self.child_tag_ff(hs)
+
+        minus_inf = -1e8
+        minus_mask = (first_subword_mask != 1) * minus_inf
+        score_arc = score_arc + minus_mask.unsqueeze(2) + minus_mask.unsqueeze(1)
+
+        lengths = self.get_mask(sent).long().sum(dim=1).cpu().numpy()
+        predicted_heads, predicted_labels = self._mst_decode(
+            head_tag, child_tag, score_arc, first_subword_mask, lengths
+        )
+
+        predicted_heads = predicted_heads * first_subword_mask
+        predicted_labels = predicted_labels * first_subword_mask
+        # here we assume only *1* special token is prepend to the sent
+        subword2word = first_subword_mask.cumsum(dim=1)
+
+        predicted_heads = predicted_heads.cpu().numpy()
+        predicted_labels = predicted_labels.cpu().numpy()
+        first_subword_mask = first_subword_mask.cpu().numpy()
+        subword2word = subword2word.cpu().numpy()
+
+        prediction = []
+        for i in range(len(sent)):
+            heads = []
+            labels = []
+            for j in range(len(sent[i])):
+                if first_subword_mask[i, j] != 1:
+                    continue
+                heads.append(subword2word[i, predicted_heads[i, j]])
+                labels.append(self.id2label[predicted_labels[i, j]])
+            assert len(heads) == len(labels)
+            assert len(heads) == len(batch["orig_sent"][i])
+            assert max(heads) <= len(batch["orig_sent"][i])
+            prediction.append(
+                {
+                    "sent": batch["orig_sent"][i],
+                    "heads": heads,
+                    "labels": labels,
+                }
+            )
+        return prediction
 
     def forward(self, batch):
         batch = self.preprocess_batch(batch)
@@ -386,7 +453,8 @@ class DependencyParser(Model):
 
     @staticmethod
     def _run_mst_decoding(
-        batch_energy: torch.Tensor, lengths: np.ndarray,
+        batch_energy: torch.Tensor,
+        lengths: np.ndarray,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         heads = []
         head_tags = []

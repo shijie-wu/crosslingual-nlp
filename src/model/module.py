@@ -75,7 +75,10 @@ class BilinearAttention(nn.Module):
     """
 
     def __init__(
-        self, mat1_dim: int, mat2_dim: int, use_input_biases: bool = False,
+        self,
+        mat1_dim: int,
+        mat2_dim: int,
+        use_input_biases: bool = False,
     ) -> None:
         super().__init__()
         if use_input_biases:

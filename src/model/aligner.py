@@ -7,10 +7,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import util
-from base_model import Model
 from dataset import Bitext, Dataset
 from enumeration import Split
 from metric import AccuracyMetric
+from model.base import Model
 
 PAD_ALIGN = -1
 

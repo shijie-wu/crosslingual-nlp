@@ -12,8 +12,7 @@ This repo supports various cross-lingual transfer learning & multilingual NLP mo
 
 ## Miscellaneous
 
-- Runtime environment (conda): `environment.yml`
-- Development environment (conda): `environment-devel.yml`
+- Environment (conda): `environment.yml`
 - Pre-commit check: `pre-commit run --all-files`
 
 ## License
