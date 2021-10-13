@@ -4,14 +4,7 @@ from typing import Dict, Type
 import fire
 
 sys.path.append("src")
-from dataset import (  # noqa: E402
-    ACEDataset,
-    BetterDataset,
-    Dataset,
-    MUCDataset,
-    ParsingDataset,
-    WikiAnnNER,
-)
+from dataset import Dataset, ParsingDataset, WikiAnnNER  # noqa: E402
 
 
 def main(task: str, path: str, lang: str, split: str):
@@ -19,9 +12,6 @@ def main(task: str, path: str, lang: str, split: str):
     MAPPING: Dict[str, Type[Dataset]] = {
         "wikiann": WikiAnnNER,
         "ud": ParsingDataset,
-        "better-abstract": BetterDataset,
-        "ace": ACEDataset,
-        "muc": MUCDataset,
     }
     assert task in MAPPING
     CLASS = MAPPING[task]
@@ -31,13 +21,7 @@ def main(task: str, path: str, lang: str, split: str):
         print("Empty file path")
         exit()
     for example in CLASS.read_file(file_path, lang, split):
-        if task == "ace":
-            for s in example["sentences"]:
-                print(" ".join(s["tokens"]))
-        elif task == "muc":
-            for i in example["sent"]:
-                print(" ".join(i))
-        else:
+        if task == "ud" or task == "wikiann":
             print(" ".join(example["sent"]))
 
 
