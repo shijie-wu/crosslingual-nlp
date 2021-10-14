@@ -71,6 +71,15 @@ done
 for split in train dev test; do
   bash $SCRIPT_DIR/project-ner.sh $split $TGT $ALIGN_ENCODER $ALIGN_LAYER $ALIGN_NAME
 done
+
+# for Arabic as a target language, we could use the following two tasks:
+# IE (ACE)
+bash $SCRIPT_DIR/project-ace.sh $split $TGT $ALIGN_ENCODER $ALIGN_LAYER $ALIGN_NAME
+
+# IE (BETTER abstract)
+for split in train analysis devtest; do
+  bash $SCRIPT_DIR/project-better.sh $split $TGT $ALIGN_ENCODER $ALIGN_LAYER $ALIGN_NAME
+done
 ```
 ### Self-training
 ```bash
