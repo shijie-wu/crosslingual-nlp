@@ -119,10 +119,10 @@ def get_inverse_square_root_schedule_with_warmup(
     """
 
     def lr_lambda(step):
-        decay_factor = warmup_steps ** 0.5
+        decay_factor = warmup_steps**0.5
         if step < warmup_steps:
             return step / max(1, warmup_steps)
-        return decay_factor * step ** -0.5
+        return decay_factor * step**-0.5
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
