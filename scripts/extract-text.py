@@ -15,7 +15,6 @@ from dataset import (  # noqa: E402
 
 
 def main(task: str, path: str, lang: str, split: str):
-
     MAPPING: Dict[str, Type[Dataset]] = {
         "wikiann": WikiAnnNER,
         "ud": ParsingDataset,

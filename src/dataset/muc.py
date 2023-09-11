@@ -30,7 +30,6 @@ class MUCDataset(Dataset):
 
     @staticmethod
     def project_label_util(maps, translation, findings):
-
         tgt_span_list = []  # list of all tgt words for a span string
         for fo in findings:
             if fo in maps:

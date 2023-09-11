@@ -13,7 +13,6 @@ from dataset.base import Dataset
 class ACEDataset(Dataset):
     @classmethod
     def read_file(cls, filepath: str, lang: str, split: str) -> Iterator[Dict]:
-
         if not os.path.isfile(filepath):
             raise FileNotFoundError(f"Could not find {filepath}")
 
@@ -215,7 +214,6 @@ class ACEDataset(Dataset):
     def project_label(
         cls, example: Dict, translation: List[str], mapping: List[Tuple]
     ) -> Dict:
-
         # span projection
         filter_sent = []
         prev_end = 0
@@ -276,7 +274,6 @@ class ACEDataset(Dataset):
 
     @classmethod
     def get_file(cls, path: str, lang: str, split: str) -> Optional[str]:
-
         return f"{path}/english.json"
 
     @classmethod

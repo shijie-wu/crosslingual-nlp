@@ -40,7 +40,6 @@ class TaggingDataset(Dataset):
     def _process_example_helper(
         self, sent: List, labels: List
     ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
-
         token_ids: List[int] = []
         label_ids: List[int] = []
 

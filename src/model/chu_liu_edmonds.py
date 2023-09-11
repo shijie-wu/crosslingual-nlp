@@ -263,7 +263,6 @@ def chu_liu_edmonds(
 def _find_cycle(
     parents: List[int], length: int, current_nodes: List[bool]
 ) -> Tuple[bool, List[int]]:
-
     added = [False for _ in range(length)]
     added[0] = True
     cycle = set()

@@ -105,7 +105,6 @@ def tokenize_str(text):
 
 
 def tokenize_data(DATA_FILE, args):
-
     if not os.path.isfile(DATA_FILE):
         raise FileNotFoundError(f"Could not find {DATA_FILE}")
 
@@ -115,7 +114,6 @@ def tokenize_data(DATA_FILE, args):
     entries = data["entries"]
     dirty_docs = []
     for entry_id, entry in entries.items():
-
         entry["segment-text-tok"] = tokenize_str(entry["segment-text"])
 
         if "annotation-sets" not in entry:

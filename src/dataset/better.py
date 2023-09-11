@@ -29,7 +29,6 @@ class BetterDataset(Dataset):
 
     @staticmethod
     def project_label_util(maps, translation, findings):
-
         tgt_span_list = []  # list of all tgt words for a span string
         for fo in findings:
             if fo in maps:
@@ -133,7 +132,6 @@ class BetterDataset(Dataset):
 
     @classmethod
     def write_example(cls, example: Dict, file_handler):
-
         with open(example["file_path"][0], "r") as f:
             org_data = json.load(f)
 
